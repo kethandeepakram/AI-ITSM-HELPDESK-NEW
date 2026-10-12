@@ -153,6 +153,7 @@ def test_huggingface_chat_completion_path(monkeypatch):
                 ]
             )
 
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "huggingface")
     monkeypatch.setattr(llm_service.settings, "HF_TOKEN", "test-token")
     monkeypatch.setattr(
         llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct"
@@ -183,6 +184,109 @@ def test_huggingface_chat_completion_path(monkeypatch):
     assert output["model_used"] == "Hugging Face (Qwen/Qwen2.5-3B-Instruct)"
     assert "Check Outlook connection status" in output["text"]
     assert output["source_id"] == "KB1003"
+
+
+def test_ollama_chat_response_path(monkeypatch):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "message": {
+                    "content": "Open Outlook, select Send/Receive, and check connectivity."
+                }
+            }
+
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(llm_service.settings, "OLLAMA_LLM_MODEL", "qwen2.5:3b")
+    monkeypatch.setattr(
+        llm_service.requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook connectivity.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Outlook Synchronization",
+                "content": "Check Outlook connectivity and Send/Receive.",
+            },
+            "score": 0.8,
+        },
+    )
+    assert output["grounded"] is True
+    assert output["model_used"] == "Ollama local (qwen2.5:3b)"
+    assert "Send/Receive" in output["text"]
+    assert output["source_id"] == "KB1003"
+
+
+def test_ollama_unavailable_uses_grounded_fallback(monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise llm_service.requests.ConnectionError("Ollama is not running")
+
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(llm_service.requests, "post", unavailable)
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook connectivity.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Outlook Synchronization",
+                "content": "Check Outlook connectivity and Send/Receive.",
+            },
+            "score": 0.8,
+        },
+    )
+    assert output["grounded"] is True
+    assert output["model_used"] == "Grounded Knowledge Retrieval Engine"
+    assert "Outlook Synchronization" in output["text"]
+
+
+def test_ollama_ticket_classification_refinement(monkeypatch):
+    from app.services import ai_service
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "response": (
+                    '{"summary":"Outlook login issue",'
+                    '"suggested_resolution":"Check the account and connectivity.",'
+                    '"confidence_score":0.91}'
+                )
+            }
+
+    monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(
+        ai_service.requests,
+        "post",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+    result = ai_service.analyze_ticket(
+        "I need help because Outlook keeps failing to connect"
+    )
+    assert result["summary"] == "Outlook login issue"
+    assert result["suggested_resolution"] == "Check the account and connectivity."
+    # The deterministic category and workflow fields must remain authoritative.
+    assert result["category"] == "Software"
+    assert result["automation_action"] == "cache_clear"
+
 
 def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
     db = LocalDatabase()
