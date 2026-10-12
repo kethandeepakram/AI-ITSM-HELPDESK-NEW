@@ -12,10 +12,10 @@ def _get_embedding_model():
     if _local_model is None:
         try:
             from sentence_transformers import SentenceTransformer
-            # Load lightweight all-MiniLM-L6-v2
-            _local_model = SentenceTransformer("all-MiniLM-L6-v2")
+            # Respect the configured embedding model; default is all-MiniLM-L6-v2.
+            _local_model = SentenceTransformer(settings.HF_EMBEDDING_MODEL)
         except Exception as e:
-            print(f"[RAG] SentenceTransformer load warning: {e}. Using TF-IDF vectorizer fallback.")
+            print(f"[RAG] SentenceTransformer load warning: {e}. Using lexical-overlap fallback.")
             _local_model = "fallback"
     return _local_model
 
