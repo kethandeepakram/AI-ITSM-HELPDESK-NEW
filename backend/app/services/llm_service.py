@@ -162,8 +162,8 @@ def generate_llm_text(
 def _clean_generated_response(response: str | None) -> str | None:
     """
     Normalize model output for the plain-text chat UI.
-    Reject responses with empty numbered/bulleted steps so the caller can use
-    the authoritative RAG article rather than display an incomplete answer.
+    Reject incomplete numbered/bulleted steps so the caller can use the
+    authoritative RAG article rather than display an unfinished answer.
     """
     if not isinstance(response, str) or len(response.strip()) < 20:
         return None
@@ -172,23 +172,20 @@ def _clean_generated_response(response: str | None) -> str | None:
     for raw_line in response.splitlines():
         line = raw_line.strip()
 
-        # Strip common Markdown that the React chat view currently displays literally.
-        line = re.sub(r"^#{1,6}\\s*", "", line)
-        line = re.sub(r"\\*\\*(.*?)\\*\\*", r"\\1", line)
-        line = re.sub(r"__(.*?)__", r"\\1", line)
-        line = re.sub(r"(?<!\\*)\\*([^*]+)\\*(?!\\*)", r"\\1", line)
+        # The React chat view displays text, not Markdown, so normalize common markers.
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"\*\*(.*?)\*\*", r"\1", line)
+        line = re.sub(r"__(.*?)__", r"\1", line)
+        line = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", line)
 
-        # Empty numbered/bullet items are a structural defect. Reject the full
-        # model answer and fall back to the retrieved knowledge article.
-        if re.match(r"^\\s*(?:\\d+[.)]|[-*•])\\s*$", line):
-            return None
-        if re.match(r"^\\s*\\d+[.)]\\s*$", line):
+        # A dangling list marker means the model probably hit its token limit.
+        if re.match(r"^\s*(?:\d+[.)]|[-*•])\s*$", line):
             return None
 
         lines.append(line)
 
-    cleaned = "\\n".join(lines)
-    cleaned = re.sub(r"\\n{3,}", "\\n\\n", cleaned).strip()
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned if len(cleaned) >= 20 else None
 
 
