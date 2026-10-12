@@ -111,7 +111,7 @@ export default function Chatbot() {
           </div>
         </div>
         <span style={{ fontSize: "11px", background: "#1e293b", color: "#38bdf8", padding: "3px 8px", borderRadius: "12px", fontWeight: "600" }}>
-          ServiceNow Connected
+          ServiceNow Integration
         </span>
       </div>
 
@@ -185,7 +185,7 @@ export default function Chatbot() {
 
                     {m.ticket.automation_status && (
                       <div style={{ marginTop: "4px", color: "#166534", fontWeight: "700" }}>
-                        ⚡ Self-Healing: {m.ticket.automation_action || "Automation"} executed successfully
+                        ⚡ Simulated Self-Healing: {m.ticket.automation_action || "Automation"} workflow completed (demo only)
                       </div>
                     )}
                   </div>
