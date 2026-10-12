@@ -41,6 +41,14 @@ Employee / Helpdesk UI (React + Vite)
 Ticket analysis  RAG / KB   ITSM integration
     |            |             |
 Automation eligibility      ServiceNow/mock
+                 |
+Knowledge articles -> overlapping chunks -> sentence-transformers embeddings
+                 |
+           ChromaDB vector search
+                 |
+       Retrieved chunks + source attribution
+                 |
+          Grounded response / escalation
     |
 Provisioning + audit records
                  |
@@ -107,6 +115,10 @@ Open `backend/.env` and set the values needed by your configuration. For example
 MONGODB_URI=
 MONGODB_DATABASE=itsm_helpdesk
 HF_TOKEN=
+HF_LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
+HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+CHROMA_PERSIST_DIRECTORY=chroma_data
+CHROMA_COLLECTION_NAME=itsm_knowledge_chunks
 ```
 
 Use the variable names required by your local configuration. Leave optional integrations blank when you want to use fallback mode. **Never commit your real `.env` file, credentials, or API tokens.** Set `CORS_ORIGINS` to the exact frontend origin(s), comma-separated, when running the frontend from a deployed URL; the template defaults only cover local Vite development.
