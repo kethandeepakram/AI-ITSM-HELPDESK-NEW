@@ -280,7 +280,7 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             "software": sw_title,
             "version": sw_info["version"],
             "status": "Completed (Simulated)",
-            "servicenow_message": "Mock request created; provisioning workflow simulated",
+            "servicenow_message": "Mock request created; no software installed",
             "workflow": provisioning_record["workflow_steps"],
             "message": f"SIMULATION ONLY: '{sw_title}' passed the demo catalogue check and a mock provisioning workflow was recorded; no endpoint software was installed.",
             "timestamp": timestamp
