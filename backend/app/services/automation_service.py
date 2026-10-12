@@ -93,17 +93,18 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
 
     # 1. Password Reset Workflow
     if action in ["password_reset", "Password Reset"]:
-        details = "Identity validated via AD LDAP -> Password expired flag cleared -> Temporary secure OTP dispatched to user phone."
+        details = "Simulation only: identity validation, password flag reset, and OTP notification are represented as demo steps; no directory or phone system is contacted."
         log_audit_trail(
             action="Password Reset Self-Heal",
             target="Active Directory / IAM",
             actor="AI Self-Heal Agent",
-            status="Success",
+            status="Simulated",
             details=details,
             ticket_id=ticket_id
         )
         return {
             "success": True,
+            "mode": "SIMULATED",
             "action": "Password Reset",
             "status": "Success",
             "steps_executed": [
@@ -113,23 +114,24 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
                 "4. Validate policy compliance (14+ chars)",
                 "5. Synchronize resolution to ServiceNow"
             ],
-            "message": "Password reset completed successfully. Temporary one-time passcode sent to employee mobile device.",
+            "message": "SIMULATION ONLY: password-reset workflow completed in the demo; no real password was changed and no OTP was sent.",
             "timestamp": timestamp
         }
 
     # 2. Account Unlock Workflow
     elif action in ["account_unlock", "Account Unlock"]:
-        details = "Failed authentication lock detected. Account state reset to Active in Active Directory."
+        details = "Simulation only: account-lock detection and unlock are represented as demo steps; no Active Directory account is changed."
         log_audit_trail(
             action="Account Unlock Self-Heal",
             target="Active Directory / IAM",
             actor="AI Self-Heal Agent",
-            status="Success",
+            status="Simulated",
             details=details,
             ticket_id=ticket_id
         )
         return {
             "success": True,
+            "mode": "SIMULATED",
             "action": "Account Unlock",
             "status": "Success",
             "steps_executed": [
@@ -139,23 +141,24 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
                 "4. Unlock employee Active Directory account",
                 "5. Update ServiceNow incident to Resolved"
             ],
-            "message": "Employee account successfully unlocked. User can now sign in with existing credentials.",
+            "message": "SIMULATION ONLY: account-unlock workflow completed in the demo; no real Active Directory account was changed.",
             "timestamp": timestamp
         }
 
     # 3. VPN Status Check & Adapter Refresh
     elif action in ["vpn_status_check", "VPN Status Check"]:
-        details = "Tunnel gateway vpn.company.internal reached. DNS flushed and Virtual Adapter cycled."
+        details = "Simulation only: VPN connectivity checks and adapter refresh are represented as demo steps; no network adapter or gateway is contacted."
         log_audit_trail(
             action="VPN Status Check & Self-Heal",
             target="Cisco AnyConnect / Network Gateway",
             actor="AI Self-Heal Agent",
-            status="Success",
+            status="Simulated",
             details=details,
             ticket_id=ticket_id
         )
         return {
             "success": True,
+            "mode": "SIMULATED",
             "action": "VPN Status Check & Reset",
             "status": "Success",
             "steps_executed": [
@@ -165,23 +168,24 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
                 "4. Validate gateway latency (32ms)",
                 "5. Record diagnostics in ServiceNow Incident"
             ],
-            "message": "VPN diagnostic passed. Network adapter reset completed. Authentication tunnel is healthy.",
+            "message": "SIMULATION ONLY: VPN diagnostic workflow completed in the demo; no real gateway was checked or adapter reset.",
             "timestamp": timestamp
         }
 
     # 4. Service Restart
     elif action in ["service_restart", "Service Restart"]:
-        details = "Network Location Awareness and WLAN AutoConfig services restarted."
+        details = "Simulation only: Windows service restart is represented as a demo step; no workstation service is restarted."
         log_audit_trail(
             action="Service Restart Self-Heal",
             target="Windows Service Host",
             actor="AI Self-Heal Agent",
-            status="Success",
+            status="Simulated",
             details=details,
             ticket_id=ticket_id
         )
         return {
             "success": True,
+            "mode": "SIMULATED",
             "action": "Service Restart",
             "status": "Success",
             "steps_executed": [
@@ -191,23 +195,24 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
                 "4. Verify service status = RUNNING",
                 "5. Update ServiceNow incident"
             ],
-            "message": "Target background service was successfully restarted and verified running.",
+            "message": "SIMULATION ONLY: service-restart workflow completed in the demo; no Windows service was restarted.",
             "timestamp": timestamp
         }
 
     # 5. Cache Clear
     elif action in ["cache_clear", "Cache Clear"]:
-        details = "Cleared client local application cache and temporary OST state."
+        details = "Simulation only: cache cleanup is represented as a demo step; no local files or Outlook cache are changed."
         log_audit_trail(
             action="Cache Clear Self-Heal",
             target="Local AppData / Cache",
             actor="AI Self-Heal Agent",
-            status="Success",
+            status="Simulated",
             details=details,
             ticket_id=ticket_id
         )
         return {
             "success": True,
+            "mode": "SIMULATED",
             "action": "Cache Clear",
             "status": "Success",
             "steps_executed": [
@@ -217,7 +222,7 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
                 "4. Re-index catalog records",
                 "5. Log audit trail"
             ],
-            "message": "Application cache purged and local synchronization stores rebuilt successfully.",
+            "message": "SIMULATION ONLY: cache-clear workflow completed in the demo; no local cache or synchronization file was changed.",
             "timestamp": timestamp
         }
 
@@ -259,7 +264,7 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             action="Software Provisioning Automation",
             target=f"Endpoint Package Manager / {sw_title}",
             actor="AI Provisioning Agent",
-            status="Success",
+            status="Simulated",
             details=f"Provisioned {sw_title} {sw_info['version']} to employee endpoint. ServiceNow Request {req_id}.",
             ticket_id=ticket_id,
             request_id=req_id
@@ -267,13 +272,14 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
 
         return {
             "success": True,
+            "mode": "SIMULATED",
             "request_id": req_id,
             "software": sw_title,
             "version": sw_info["version"],
             "status": "Provisioning",
             "servicenow_message": "Request created successfully",
             "workflow": provisioning_record["workflow_steps"],
-            "message": f"Software '{sw_title}' successfully approved from catalog and dispatched for automated endpoint deployment.",
+            "message": f"SIMULATION ONLY: '{sw_title}' passed the demo catalogue check and a mock provisioning workflow was recorded; no endpoint software was installed.",
             "timestamp": timestamp
         }
 
