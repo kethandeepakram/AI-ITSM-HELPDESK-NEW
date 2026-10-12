@@ -8,6 +8,7 @@ from app.routes.servicenow import router as servicenow_router
 from app.routes.audit import router as audit_router
 from app.routes.demo import router as demo_router
 from seed_knowledge import seed_knowledge_base
+from app.config import settings
 
 app = FastAPI(
     title="AI-Powered ITSM & Intelligent Helpdesk Automation Platform",
@@ -17,10 +18,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.CORS_ORIGINS,
+    # The frontend does not use cookie-based authentication.
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(chatbot_router)
