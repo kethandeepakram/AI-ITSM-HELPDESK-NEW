@@ -271,6 +271,72 @@ def test_transformers_ticket_classification_refinement(monkeypatch):
     assert result["automation_action"] == "cache_clear"
 
 
+
+def test_chat_endpoint_returns_response_and_persists_history(monkeypatch):
+    from app.routes import chatbot
+
+    stored = []
+
+    class FakeCollection:
+        def insert_one(self, document):
+            stored.append(document)
+
+    fake_analysis = {
+        "intent": "Knowledge Question",
+        "category": "Software",
+        "subcategory": "Email / Outlook",
+        "priority": "P3",
+        "impact": "Individual",
+        "urgency": "Medium",
+        "assignment_group": "Application Support",
+        "summary": "Outlook synchronization question",
+        "suggested_action": "Check Outlook connectivity.",
+        "suggested_resolution": "Check Outlook connectivity.",
+        "confidence_score": 0.91,
+        "should_escalate": False,
+        "automation_possible": False,
+        "automation_action": None,
+        "software_name": None,
+    }
+    fake_sources = [{
+        "article": {
+            "id": "KB1003",
+            "title": "Outlook Synchronization",
+            "category": "Software",
+            "content": "Check Outlook connectivity and Send/Receive.",
+        },
+        "score": 0.8,
+    }]
+    fake_answer = {
+        "text": "Open Outlook and check Send/Receive.",
+        "grounded": True,
+        "source_used": "Outlook Synchronization",
+        "source_id": "KB1003",
+        "model_used": "Test model",
+    }
+
+    monkeypatch.setattr(chatbot, "analyze_ticket", lambda message: fake_analysis)
+    monkeypatch.setattr(chatbot, "search_knowledge_base", lambda message, top_k: fake_sources)
+    monkeypatch.setattr(chatbot, "generate_ai_response", lambda **kwargs: fake_answer)
+    monkeypatch.setattr(chatbot, "get_chat_history_collection", lambda: FakeCollection())
+
+    response = client.post(
+        "/api/chat",
+        json={"message": "How do I troubleshoot Outlook synchronization?"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ai_response"] == fake_answer["text"]
+    assert data["source_used"] == "Outlook Synchronization"
+    assert data["confidence_score"] == 0.91
+    assert len(stored) == 1
+    assert stored[0]["user_message"] == "How do I troubleshoot Outlook synchronization?"
+    assert stored[0]["source_used"] == "Outlook Synchronization"
+    assert stored[0]["chat_id"].startswith("CHAT-")
+
+
+
 def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
     db = LocalDatabase()
     provisioning = db["software_provisioning"]
