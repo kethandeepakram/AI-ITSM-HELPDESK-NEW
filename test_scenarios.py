@@ -127,12 +127,15 @@ def test_chroma_vector_search_with_fake_store(monkeypatch):
     assert results, "Chroma retrieval should return a relevant article"
     assert "Outlook" in results[0]["article"]["title"]
     assert results[0]["semantic_score"] > 0.9
+    # Semantic search selects a chunk, but the returned article retains full
+    # source line breaks for grounded answer and fallback presentation.
+    assert "\n2. In Outlook, navigate to Send / Receive tab" in results[0]["article"]["content"]
 
 
 
 
 
-def test_huggingface_chat_completion_path(monkeypatch):
+def test_huggingface_hosted_chat_completion_path(monkeypatch):
     from types import SimpleNamespace
     import huggingface_hub
 
@@ -141,7 +144,7 @@ def test_huggingface_chat_completion_path(monkeypatch):
             assert api_key == "test-token"
 
         def chat_completion(self, messages, model, max_tokens, temperature):
-            assert model == "Qwen/Qwen2.5-3B-Instruct"
+            assert model == "Qwen/Qwen2.5-0.5B-Instruct"
             assert len(messages) == 2
             return SimpleNamespace(
                 choices=[
@@ -153,12 +156,47 @@ def test_huggingface_chat_completion_path(monkeypatch):
                 ]
             )
 
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "huggingface_api")
     monkeypatch.setattr(llm_service.settings, "HF_TOKEN", "test-token")
     monkeypatch.setattr(
-        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct"
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"
+    )
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", FakeInferenceClient)
+
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook connectivity.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Outlook Synchronization",
+                "content": "Check Outlook connectivity and Send/Receive.",
+            },
+            "score": 0.8,
+        },
+    )
+
+    assert output["grounded"] is True
+    assert output["model_used"] == "Hugging Face Inference Providers (Qwen/Qwen2.5-0.5B-Instruct)"
+    assert "Check Outlook connection status" in output["text"]
+    assert output["source_id"] == "KB1003"
+
+
+def test_local_transformers_chat_response_path(monkeypatch):
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"
     )
     monkeypatch.setattr(
-        huggingface_hub, "InferenceClient", FakeInferenceClient
+        llm_service,
+        "_generate_with_transformers",
+        lambda messages, max_new_tokens, temperature:
+            "Open Outlook, select Send/Receive, and check account connectivity.",
     )
 
     output = generate_ai_response(
@@ -180,9 +218,217 @@ def test_huggingface_chat_completion_path(monkeypatch):
     )
 
     assert output["grounded"] is True
-    assert output["model_used"] == "Hugging Face (Qwen/Qwen2.5-3B-Instruct)"
-    assert "Check Outlook connection status" in output["text"]
+    assert output["model_used"] == "Hugging Face Transformers local (Qwen/Qwen2.5-0.5B-Instruct)"
+    assert "Send/Receive" in output["text"]
     assert output["source_id"] == "KB1003"
+
+
+def test_transformers_unavailable_uses_grounded_fallback(monkeypatch):
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(
+        llm_service,
+        "_generate_with_transformers",
+        lambda messages, max_new_tokens, temperature: None,
+    )
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook connectivity.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Outlook Synchronization",
+                "content": "Check Outlook connectivity and Send/Receive.",
+            },
+            "score": 0.8,
+        },
+    )
+    assert output["grounded"] is True
+    assert output["model_used"] == "Grounded Knowledge Retrieval Engine"
+    assert "Outlook Synchronization" in output["text"]
+
+
+
+def test_malformed_generated_steps_fall_back_to_knowledge_article(monkeypatch):
+    from app.services.llm_service import _clean_generated_response
+
+    malformed = (
+        "To troubleshoot Outlook synchronization issues:\n\n"
+        "1. **Check Internet Connection**: Ensure you have a stable internet connection.\n"
+        "2. **Verify VPN Connection**: If using a VPN, make sure it works properly.\n"
+        "3."
+    )
+    assert _clean_generated_response(malformed) is None
+
+    # The model has also returned a bare final number (for example, "6")
+    # without a period; this must trigger the same grounded fallback.
+    dangling_number = (
+        "To troubleshoot Outlook synchronization issues:\n"
+        "1. Check the Outlook status bar.\n"
+        "2. Select Send/Receive All Folders.\n"
+        "6"
+    )
+    assert _clean_generated_response(dangling_number) is None
+
+    truncated_sentence = (
+        "To troubleshoot Outlook synchronization issues:\n"
+        "1. Check Outlook's status bar.\n"
+        "2. Select Send/Receive All Folders.\n"
+        "3. Verify if folders are being"
+    )
+    assert _clean_generated_response(truncated_sentence) is None
+
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+    monkeypatch.setattr(
+        llm_service,
+        "_generate_with_transformers",
+        lambda messages, max_new_tokens, temperature: malformed,
+    )
+
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook synchronization settings.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Microsoft Outlook Mailbox Synchronization Troubleshooting",
+                "content": (
+                    "To resolve Outlook email synchronization issues:\n"
+                    "1. Check the Outlook status bar for Disconnected or Trying to connect.\n"
+                    "2. Use Send/Receive All Folders or press F9.\n"
+                    "3. Verify Cached Exchange Mode is enabled.\n"
+                    "4. Rebuild the local OST cache only if earlier steps fail."
+                ),
+            },
+            "score": 0.8,
+        },
+    )
+
+    assert output["model_used"] == "Grounded Knowledge Retrieval Engine"
+    assert "Cached Exchange Mode" in output["text"]
+    assert "Send/Receive All Folders" in output["text"]
+    assert "\n3.\n" not in output["text"]
+    assert "**" not in output["text"]
+    assert "Suggested Next Step" not in output["text"]
+    assert "\n1. Check the Outlook status bar" in output["text"]
+
+
+def test_transformers_ticket_classification_refinement(monkeypatch):
+    from app.services import ai_service
+
+    monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(ai_service.settings, "HF_REFINE_TICKET_TEXT", True)
+    monkeypatch.setattr(
+        ai_service,
+        "generate_llm_text",
+        lambda messages, max_new_tokens, temperature:
+            '{"summary":"Outlook login issue",'
+            '"suggested_resolution":"Check the account and connectivity.",'
+            '"confidence_score":0.91}',
+    )
+    result = ai_service.analyze_ticket(
+        "I need help because Outlook keeps failing to connect"
+    )
+    assert result["summary"] == "Outlook login issue"
+    assert result["suggested_resolution"] == "Check the account and connectivity."
+    # Deterministic category and workflow fields remain authoritative.
+    assert result["category"] == "Software"
+    assert result["automation_action"] == "cache_clear"
+
+
+
+def test_ticket_classification_skips_second_llm_call_by_default(monkeypatch):
+    from app.services import ai_service
+
+    monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(ai_service.settings, "HF_REFINE_TICKET_TEXT", False)
+
+    def unexpected_llm_call(*args, **kwargs):
+        raise AssertionError("classification should not make a second local-model call")
+
+    monkeypatch.setattr(ai_service, "generate_llm_text", unexpected_llm_call)
+    result = ai_service.analyze_ticket(
+        "How do I troubleshoot Outlook synchronization?"
+    )
+    assert result["category"] == "Software"
+    assert result["subcategory"] == "Email / Outlook"
+    assert result["automation_action"] == "cache_clear"
+
+
+def test_chat_endpoint_returns_response_and_persists_history(monkeypatch):
+    from app.routes import chatbot
+
+    stored = []
+
+    class FakeCollection:
+        def insert_one(self, document):
+            stored.append(document)
+
+    fake_analysis = {
+        "intent": "Knowledge Question",
+        "category": "Software",
+        "subcategory": "Email / Outlook",
+        "priority": "P3",
+        "impact": "Individual",
+        "urgency": "Medium",
+        "assignment_group": "Application Support",
+        "summary": "Outlook synchronization question",
+        "suggested_action": "Check Outlook connectivity.",
+        "suggested_resolution": "Check Outlook connectivity.",
+        "confidence_score": 0.91,
+        "should_escalate": False,
+        "automation_possible": False,
+        "automation_action": None,
+        "software_name": None,
+    }
+    fake_sources = [{
+        "article": {
+            "id": "KB1003",
+            "title": "Outlook Synchronization",
+            "category": "Software",
+            "content": "Check Outlook connectivity and Send/Receive.",
+        },
+        "score": 0.8,
+    }]
+    fake_answer = {
+        "text": "Open Outlook and check Send/Receive.",
+        "grounded": True,
+        "source_used": "Outlook Synchronization",
+        "source_id": "KB1003",
+        "model_used": "Test model",
+    }
+
+    monkeypatch.setattr(chatbot, "analyze_ticket", lambda message: fake_analysis)
+    monkeypatch.setattr(chatbot, "search_knowledge_base", lambda message, top_k: fake_sources)
+    monkeypatch.setattr(chatbot, "generate_ai_response", lambda **kwargs: fake_answer)
+    monkeypatch.setattr(chatbot, "get_chat_history_collection", lambda: FakeCollection())
+
+    response = client.post(
+        "/api/chat",
+        json={"message": "How do I troubleshoot Outlook synchronization?"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ai_response"] == fake_answer["text"]
+    assert data["source_used"] == "Outlook Synchronization"
+    assert data["confidence_score"] == 0.91
+    assert len(stored) == 1
+    assert stored[0]["user_message"] == "How do I troubleshoot Outlook synchronization?"
+    assert stored[0]["source_used"] == "Outlook Synchronization"
+    assert stored[0]["chat_id"].startswith("CHAT-")
+
+
 
 def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
     db = LocalDatabase()
@@ -220,6 +466,34 @@ def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
     assert any(entry.get("status") == "Simulated" for entry in audit_entries)
 
 def test_rule_based_safety_and_intent_guards():
+    company_wide_outage_message = (
+        "The entire company network is down and all employees cannot access critical business systems"
+    )
+    company_wide_outage = _rule_based_classification(company_wide_outage_message)
+    assert company_wide_outage["priority"] == "P1"
+    assert company_wide_outage["impact"] == "Multiple Users"
+    assert company_wide_outage["category"] == "Network"
+    assert company_wide_outage["subcategory"] == "Enterprise Network Outage"
+    assert company_wide_outage["should_escalate"] is True
+    assert company_wide_outage["automation_possible"] is False
+    assert company_wide_outage["automation_action"] is None
+    assert company_wide_outage["assignment_group"] == "Infrastructure / L2 Support"
+
+    company_outage_response = generate_ai_response(
+        company_wide_outage_message,
+        company_wide_outage,
+        {
+            "article": {
+                "title": "Wi-Fi Troubleshooting",
+                "content": "Check whether the corporate SSID is correct.",
+            },
+            "score": 0.99,
+        },
+    )
+    assert company_outage_response["grounded"] is False
+    assert "Critical incident detected" in company_outage_response["text"]
+    assert "corporate SSID" not in company_outage_response["text"]
+
     outage = _rule_based_classification(
         "The production server is down and multiple employees cannot access the application"
     )
@@ -242,7 +516,7 @@ def test_rule_based_safety_and_intent_guards():
         },
     )
     assert response["grounded"] is False
-    assert "Critical production incident" in response["text"]
+    assert "Critical incident detected" in response["text"]
     assert "Install the approved software" not in response["text"]
 
     install = _rule_based_classification("Please install Microsoft Teams on my laptop")
