@@ -79,11 +79,6 @@ def _rule_based_classification(message: str) -> dict:
         confidence_score = 0.96
 
     
-    # Critical production server outages
-    elif False:
-        pass
-
-
     # Scenario 2 & Account / Password Reset / Unlock
     elif any(k in text for k in ["password", "forgot password", "reset password", "password expired"]):
         intent = "Automatable Issue"
@@ -113,8 +108,13 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "account_unlock"
         confidence_score = 0.97
 
-    # Scenario 4 & Software Provisioning
-    elif any(k in text for k in ["install", "installation", "provision", "need visual studio code", "need vs code", "need software"]) or any(sw in text for sw in SOFTWARE_LIST):
+    # Software provisioning is selected only when the message expresses a request.
+    # Merely mentioning Python, Teams, Docker, etc. must not trigger an installation.
+    elif any(k in text for k in [
+        "install", "installation", "installed", "installing", "provision",
+        "provisioning", "software request", "request software", "need software",
+        "deploy software", "set up software", "setup software"
+    ]):
         intent = "Service Request"
         category = "Software"
         subcategory = "Software Provisioning"
@@ -235,8 +235,17 @@ def _rule_based_classification(message: str) -> dict:
     }
 
 def analyze_ticket(message: str) -> dict:
-    """Analyze ticket intent, classification, priority, and automation eligibility."""
-    # Try Hugging Face Inference if token is available
+    """Analyze a request while keeping deterministic safety rules authoritative."""
+    base = _rule_based_classification(message)
+
+    # Never send critical incidents or mandatory escalations through an LLM
+    # merge path that could downgrade their priority or enable automation.
+    if base.get("priority") == "P1" or base.get("should_escalate"):
+        return base
+
+    # Try Hugging Face Inference if token is available. The LLM may refine
+    # wording/confidence, but it cannot choose automation actions or overwrite
+    # a deterministic category/priority/assignment decision.
     if settings.HF_TOKEN:
         try:
             from huggingface_hub import InferenceClient
@@ -256,15 +265,29 @@ def analyze_ticket(message: str) -> dict:
             json_match = re.search(r"\{.*\}", resp, re.DOTALL)
             if json_match:
                 parsed = json.loads(json_match.group(0))
-                # Ensure all required fields exist
-                base = _rule_based_classification(message)
-                for k, v in parsed.items():
-                    if v is not None:
-                        base[k] = v
-                base["should_escalate"] = base.get("confidence_score", 0.9) < settings.CONFIDENCE_THRESHOLD
+                # Allow the model to refine only user-facing text and confidence.
+                # Classification and automation eligibility remain rule-based.
+                for key in ("summary", "suggested_resolution", "confidence_score"):
+                    value = parsed.get(key)
+                    if value is not None:
+                        base[key] = value
+
+                base["suggested_action"] = base.get("suggested_resolution")
+                try:
+                    model_confidence = float(base.get("confidence_score", 0.9))
+                except (TypeError, ValueError):
+                    model_confidence = 0.9
+                model_confidence = min(max(model_confidence, 0.0), 1.0)
+                base["confidence_score"] = round(model_confidence, 2)
+                base["should_escalate"] = bool(
+                    base.get("should_escalate", False)
+                    or model_confidence < settings.CONFIDENCE_THRESHOLD
+                )
+                if base["should_escalate"]:
+                    base["automation_possible"] = False
+                    base["automation_action"] = None
                 return base
         except Exception as e:
             logger.info(f"Hugging Face Inference call skipped or fell back ({e})")
 
-    # High-precision deterministic classifier aligned with SORIM.Ai rubric
-    return _rule_based_classification(message)
+    return base
