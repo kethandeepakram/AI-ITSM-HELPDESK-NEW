@@ -19,6 +19,17 @@ class Settings:
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
+    # Comma-separated allowed browser origins. Set this to the frontend origin
+    # for deployments; the default is for local Vite development only.
+    CORS_ORIGINS: list[str] = [
+        origin.strip().rstrip("/")
+        for origin in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:5173,http://127.0.0.1:5173",
+        ).split(",")
+        if origin.strip()
+    ]
+
     # MongoDB Atlas
     MONGODB_URI: str | None = os.getenv("MONGODB_URI")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "itsm_helpdesk")
