@@ -14,6 +14,8 @@ from app.main import app
 from app.database.mongodb import LocalDatabase
 from app.services.ai_service import _rule_based_classification
 from app.services.llm_service import generate_ai_response
+from app.services import rag_service
+from seed_knowledge import KNOWLEDGE_ARTICLES
 
 client = TestClient(app)
 
@@ -36,6 +38,24 @@ def test_local_database_cursor_and_upsert():
     assert result["upserted_id"] is not None
     assert collection.find_one({"id": "KB-test"})["title"] == "Test article"
 
+
+
+def test_rag_chunking_and_lexical_fallback(monkeypatch):
+    chunks = rag_service.chunk_text(" ".join(f"word{i}" for i in range(250)), chunk_words=80, overlap_words=10)
+    assert len(chunks) >= 3
+    assert all(chunk.strip() for chunk in chunks)
+
+    monkeypatch.setattr(rag_service, "_local_model", "fallback")
+    monkeypatch.setattr(rag_service, "_load_articles", lambda: KNOWLEDGE_ARTICLES)
+    results = rag_service.search_knowledge_base(
+        "How do I troubleshoot Outlook synchronization?",
+        top_k=3,
+    )
+
+    assert results, "Lexical fallback should retrieve a relevant knowledge article"
+    assert "Outlook" in results[0]["article"]["title"]
+    assert results[0]["score"] >= 0.22
+    assert results[0]["article"]["content"]
 
 def test_rule_based_safety_and_intent_guards():
     outage = _rule_based_classification(
