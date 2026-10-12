@@ -247,7 +247,9 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             "software": sw_title,
             "version": sw_info["version"],
             "status": "Completed (Simulated)",
-            "servicenow_status": "Mock request created; provisioning workflow simulated",
+            "execution_mode": "SIMULATED",
+            "software_installed": False,
+            "servicenow_status": "Mock request created; no software installed",
             "workflow_steps": [
                 "1. Employee AI intent detection completed",
                 f"2. Software catalogue verified: {sw_title} is {sw_info['status']}",
@@ -265,7 +267,7 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             target=f"Endpoint Package Manager / {sw_title}",
             actor="AI Provisioning Agent",
             status="Simulated",
-            details=f"Simulated provisioning workflow for {sw_title} {sw_info['version']}; no endpoint software was installed. Mock ServiceNow Request {req_id}.",
+            details=f"Simulated provisioning workflow for {sw_title} {sw_info['version']}; execution_mode=SIMULATED; software_installed=False; no endpoint software was installed. Mock ServiceNow Request {req_id}.",
             ticket_id=ticket_id,
             request_id=req_id
         )
@@ -273,6 +275,7 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
         return {
             "success": True,
             "mode": "SIMULATED",
+            "software_installed": False,
             "request_id": req_id,
             "software": sw_title,
             "version": sw_info["version"],
