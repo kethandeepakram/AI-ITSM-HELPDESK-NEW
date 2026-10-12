@@ -4,6 +4,7 @@ import base64
 import logging
 from datetime import datetime
 from urllib.request import Request, urlopen
+from urllib.parse import quote, urlencode
 from urllib.error import HTTPError, URLError
 
 from app.config import settings
@@ -19,6 +20,63 @@ def _get_auth_header():
     ).decode()
     return f"Basic {token}"
 
+def _live_servicenow_enabled() -> bool:
+    return bool(
+        settings.SERVICENOW_INSTANCE_URL
+        and settings.SERVICENOW_USERNAME
+        and settings.SERVICENOW_PASSWORD
+        and not settings.SERVICENOW_MOCK_MODE
+    )
+
+
+def _live_table_request(
+    table: str,
+    method: str = "GET",
+    payload: dict | None = None,
+    query: str | None = None,
+    sys_id: str | None = None,
+) -> dict:
+    """Call the live ServiceNow Table API and return its result object."""
+    base_url = settings.SERVICENOW_INSTANCE_URL.rstrip("/")
+    endpoint = f"{base_url}/api/now/table/{quote(table, safe='')}"
+    if sys_id:
+        endpoint += f"/{quote(sys_id, safe='')}"
+    if query:
+        endpoint += "?" + urlencode({"sysparm_query": query, "sysparm_limit": 1})
+
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {
+        "Accept": "application/json",
+        "Authorization": _get_auth_header(),
+    }
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+
+    request = Request(endpoint, data=data, headers=headers, method=method)
+    with urlopen(request, timeout=8) as response:
+        response_data = json.loads(response.read().decode("utf-8"))
+    return response_data.get("result", {})
+
+
+def list_servicenow_incidents() -> dict:
+    """Return live incidents when live mode is enabled; otherwise return mock records."""
+    if _live_servicenow_enabled():
+        try:
+            result = _live_table_request(
+                "incident",
+                query="ORDERBYDESCsys_updated_on",
+            )
+            # Table API query returns a list when querying a table.
+            incidents = result if isinstance(result, list) else ([result] if result else [])
+            return {"success": True, "count": len(incidents), "incidents": incidents, "mode": "Live ServiceNow Instance"}
+        except Exception as exc:
+            logger.warning("Unable to list live ServiceNow incidents: %s", exc)
+            return {"success": False, "count": 0, "incidents": [], "mode": "Live ServiceNow Instance", "error": str(exc)}
+
+    collection = get_servicenow_collection()
+    incidents = list(collection.find({}, {"_id": 0}).sort("created_at", -1))
+    return {"success": True, "count": len(incidents), "incidents": incidents, "mode": "ServiceNow Mock REST API"}
+
 def create_servicenow_incident(ticket: dict) -> dict:
     """
     Creates an Incident in ServiceNow using the AI-generated classification fields:
@@ -33,7 +91,7 @@ def create_servicenow_incident(ticket: dict) -> dict:
     inc_number = f"INC{1000000 + count + 1}"
 
     # Try live ServiceNow instance if credentials configured
-    if settings.SERVICENOW_INSTANCE_URL and settings.SERVICENOW_USERNAME and not settings.SERVICENOW_MOCK_MODE:
+    if _live_servicenow_enabled():
         try:
             endpoint = f"{settings.SERVICENOW_INSTANCE_URL.rstrip('/')}/api/now/table/incident"
             payload = {
@@ -105,33 +163,110 @@ def create_servicenow_incident(ticket: dict) -> dict:
     }
 
 def update_servicenow_incident(incident_number: str, updates: dict) -> dict:
-    """Updates existing ServiceNow incident status, resolution notes, etc."""
+    """Update a live ServiceNow incident or the local mock record."""
+    safe_updates = dict(updates)
+    safe_updates["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    if _live_servicenow_enabled():
+        try:
+            lookup = _live_table_request(
+                "incident",
+                query=f"number={incident_number}",
+            )
+            records = lookup if isinstance(lookup, list) else ([lookup] if lookup else [])
+            if not records:
+                return {"success": False, "incident_number": incident_number, "message": "Live ServiceNow incident not found."}
+            sys_id = records[0].get("sys_id")
+            if not sys_id:
+                return {"success": False, "incident_number": incident_number, "message": "ServiceNow lookup returned no sys_id."}
+            payload = {}
+            if "state" in safe_updates:
+                payload["state"] = {"New": "1", "In Progress": "2", "Resolved": "6", "Closed": "7", "Escalated": "2"}.get(safe_updates["state"], safe_updates["state"])
+            if "close_notes" in safe_updates:
+                payload["close_notes"] = safe_updates["close_notes"]
+            if "assignment_group" in safe_updates:
+                # ServiceNow expects a group sys_id, not an arbitrary group display name.
+                group = _live_table_request(
+                    "sys_user_group",
+                    query=f"name={safe_updates['assignment_group']}",
+                )
+                groups = group if isinstance(group, list) else ([group] if group else [])
+                if groups and groups[0].get("sys_id"):
+                    payload["assignment_group"] = groups[0]["sys_id"]
+            result = _live_table_request("incident", method="PATCH", payload=payload, sys_id=sys_id)
+            return {
+                "success": True,
+                "mode": "Live ServiceNow Instance",
+                "incident_number": incident_number,
+                "updated_fields": list(payload.keys()),
+                "status": "Updated",
+                "incident": result,
+            }
+        except Exception as exc:
+            logger.warning("Live ServiceNow incident update failed: %s", exc)
+            return {"success": False, "mode": "Live ServiceNow Instance", "incident_number": incident_number, "message": str(exc)}
+
     collection = get_servicenow_collection()
-    updates["updated_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    collection.update_one(
+    result = collection.update_one(
         {"incident_number": incident_number},
-        {"$set": updates}
+        {"$set": safe_updates},
     )
-
+    if not result.get("matched_count", result.get("modified_count", 0)):
+        return {"success": False, "incident_number": incident_number, "message": f"Mock incident {incident_number} not found."}
     return {
         "success": True,
+        "mode": "ServiceNow Mock REST API",
         "incident_number": incident_number,
-        "updated_fields": list(updates.keys()),
+        "updated_fields": list(safe_updates.keys()),
         "status": "Updated",
-        "message": f"ServiceNow incident {incident_number} updated successfully."
+        "message": f"ServiceNow mock incident {incident_number} updated successfully."
     }
 
+
 def get_servicenow_incident(incident_number: str) -> dict:
-    """Retrieves incident details from ServiceNow."""
+    """Retrieve an incident from the configured live API or local mock."""
+    if _live_servicenow_enabled():
+        try:
+            result = _live_table_request("incident", query=f"number={incident_number}")
+            records = result if isinstance(result, list) else ([result] if result else [])
+            if records:
+                return {"success": True, "mode": "Live ServiceNow Instance", "incident": records[0]}
+            return {"success": False, "message": f"Incident {incident_number} not found"}
+        except Exception as exc:
+            logger.warning("Live ServiceNow incident retrieval failed: %s", exc)
+            return {"success": False, "mode": "Live ServiceNow Instance", "message": str(exc)}
+
     collection = get_servicenow_collection()
     record = collection.find_one({"incident_number": incident_number}, {"_id": 0})
     if record:
-        return {"success": True, "incident": record}
+        return {"success": True, "mode": "ServiceNow Mock REST API", "incident": record}
     return {"success": False, "message": f"Incident {incident_number} not found"}
 
+
 def create_servicenow_service_request(request_data: dict) -> dict:
-    """Creates a Service Request in ServiceNow for Software Provisioning."""
+    """Create a live ServiceNow request when configured, otherwise use the mock."""
+    if _live_servicenow_enabled():
+        try:
+            payload = {
+                "short_description": f"Software Provisioning: {request_data.get('software')}",
+                "description": f"Software requested: {request_data.get('software')}. Source request: {request_data.get('request_id', 'not specified')}",
+                "requested_for": request_data.get("requested_for"),
+            }
+            payload = {key: value for key, value in payload.items() if value}
+            result = _live_table_request("sc_request", method="POST", payload=payload)
+            return {
+                "success": True,
+                "mode": "Live ServiceNow Instance",
+                "request_number": result.get("number") or request_data.get("request_id"),
+                "sys_id": result.get("sys_id"),
+                "software": request_data.get("software"),
+                "status": "Created",
+                "message": "ServiceNow request created successfully."
+            }
+        except Exception as exc:
+            logger.warning("Live ServiceNow request creation failed: %s", exc)
+            return {"success": False, "mode": "Live ServiceNow Instance", "message": str(exc)}
+
     req_number = request_data.get("request_id") or f"REQ00{datetime.utcnow().strftime('%M%S')}"
     req_record = {
         "request_number": req_number,
