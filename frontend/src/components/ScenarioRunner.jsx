@@ -43,7 +43,7 @@ export default function ScenarioRunner({ onScenarioExecuted }) {
           </span>
         </div>
         <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-          Click any scenario to demonstrate the complete end-to-end automated pipeline
+          Run a simulated scenario; automated steps are demonstrations, not real system changes
         </span>
       </div>
 
@@ -149,7 +149,7 @@ export default function ScenarioRunner({ onScenarioExecuted }) {
             {/* Scenario 2 Content */}
             {activeModalData.scenario_id === 2 && (
               <div>
-                <h4 style={{ margin: '0 0 10px 0', color: '#166534' }}>⚡ Automated Self-Healing Execution Flow</h4>
+                <h4 style={{ margin: '0 0 10px 0', color: '#166534' }}>⚡ Simulated Self-Healing Execution Flow</h4>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
                   {activeModalData.workflow_executed.map((step, idx) => (
                     <div key={idx} style={{ fontSize: '13px', marginBottom: '6px', color: '#166534', fontWeight: '500' }}>
@@ -157,7 +157,13 @@ export default function ScenarioRunner({ onScenarioExecuted }) {
                     </div>
                   ))}
                   <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #bbf7d0', fontSize: '13px' }}>
-                    ServiceNow Status: <strong>{activeModalData.ticket.servicenow_incident} updated to {activeModalData.status}</strong>
+                    Demo ticket status: <strong>{activeModalData.ticket.status}</strong>
+                    <div style={{ marginTop: '4px', color: '#64748b' }}>
+                      Execution mode: {activeModalData.automation_result?.mode || "SIMULATED"}
+                    </div>
+                    <div style={{ marginTop: '4px', color: '#64748b' }}>
+                      Linked ServiceNow record: {activeModalData.ticket.servicenow_incident || "Not available"} (may remain open in live mode because no real remediation is performed)
+                    </div>
                   </div>
                 </div>
               </div>
@@ -207,7 +213,17 @@ export default function ScenarioRunner({ onScenarioExecuted }) {
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '14px', marginBottom: '14px', fontSize: '13px' }}>
                   <div>Confidence Score: <strong style={{ color: '#dc2626' }}>{(activeModalData.confidence_score * 100).toFixed(0)}% (Below 65% Threshold)</strong></div>
                   <div>Policy Action: <strong>{activeModalData.no_hallucination_guard}</strong></div>
-                  <div>Human Escalation: <strong>{activeModalData.escalation_required ? 'YES (Automatic L2 Queue)' : 'NO'}</strong></div>
+                  <div>Human Escalation: <strong>{activeModalData.escalation_required ? 'YES (Ticket escalated)' : 'NO'}</strong></div>
+                  {activeModalData.ticket && (
+                    <div style={{ marginTop: '6px' }}>
+                      Ticket: <strong>{activeModalData.ticket.ticket_id}</strong> — {activeModalData.ticket.status}
+                    </div>
+                  )}
+                  {activeModalData.servicenow_incident?.incident_number && (
+                    <div style={{ marginTop: '6px' }}>
+                      ServiceNow reference: <strong>{activeModalData.servicenow_incident.incident_number}</strong> ({activeModalData.servicenow_incident.mode || "mode not reported"})
+                    </div>
+                  )}
                   <div style={{ marginTop: '10px', padding: '10px', background: '#ffffff', borderRadius: '6px', color: '#991b1b', whiteSpace: 'pre-line' }}>
                     {activeModalData.ai_response}
                   </div>
