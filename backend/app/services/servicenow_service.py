@@ -96,16 +96,41 @@ def create_servicenow_incident(ticket: dict) -> dict:
     if _live_servicenow_enabled():
         try:
             endpoint = f"{settings.SERVICENOW_INSTANCE_URL.rstrip('/')}/api/now/table/incident"
+            category_map = {
+                "Network": "network",
+                "Software": "software",
+                "Hardware": "hardware",
+                "General IT": "inquiry",
+            }
+            priority_map = {"P1": "1", "P2": "2", "P3": "3", "P4": "4"}
+            priority = ticket.get("priority", "P3")
+            assignment_group = ticket.get("assignment_group")
+            description = ticket.get("message", "")
+            if assignment_group:
+                description = f"{description}\\nRequested assignment group: {assignment_group}"
+
             payload = {
                 "short_description": ticket.get("summary") or ticket.get("message"),
-                "description": ticket.get("message"),
-                "category": ticket.get("category"),
-                "subcategory": ticket.get("subcategory"),
+                "description": description,
+                "category": category_map.get(ticket.get("category")),
+                "subcategory": "vpn" if ticket.get("category") == "Network" and ticket.get("subcategory") == "VPN" else None,
                 "urgency": "1" if ticket.get("urgency") == "High" else "2",
-                "impact": "1" if ticket.get("priority") == "P1" else "2",
-                "assignment_group": ticket.get("assignment_group"),
-                "correlation_id": ticket.get("ticket_id")
+                "impact": "1" if ticket.get("impact") == "Multiple Users" or priority == "P1" else "2" if priority == "P2" else "3",
+                "priority": priority_map.get(priority, "3"),
+                "correlation_id": ticket.get("ticket_id"),
             }
+            if assignment_group:
+                # ServiceNow reference fields expect a sys_id rather than display text.
+                group_result = _live_table_request(
+                    "sys_user_group",
+                    query=f"name={assignment_group}",
+                )
+                group_records = group_result if isinstance(group_result, list) else ([group_result] if group_result else [])
+                if group_records and group_records[0].get("sys_id"):
+                    payload["assignment_group"] = group_records[0]["sys_id"]
+
+            # Avoid sending unset choice/reference fields which may be rejected.
+            payload = {key: value for key, value in payload.items() if value is not None}
             req = Request(
                 endpoint,
                 data=json.dumps(payload).encode(),
