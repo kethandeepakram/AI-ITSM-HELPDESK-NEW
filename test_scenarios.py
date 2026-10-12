@@ -262,9 +262,9 @@ def test_malformed_generated_steps_fall_back_to_knowledge_article(monkeypatch):
     assert _clean_generated_response(malformed) is None
 
     truncated_sentence = (
-        "To troubleshoot Outlook synchronization issues:\\n"
-        "1. Check Outlook's status bar.\\n"
-        "2. Select Send/Receive All Folders.\\n"
+        "To troubleshoot Outlook synchronization issues:\n"
+        "1. Check Outlook's status bar.\n"
+        "2. Select Send/Receive All Folders.\n"
         "3. Verify if folders are being"
     )
     assert _clean_generated_response(truncated_sentence) is None
