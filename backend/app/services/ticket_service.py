@@ -90,7 +90,6 @@ def create_ticket(message: str, auto_execute_self_heal: bool = True) -> dict:
                 if (
                     ticket.get("servicenow_incident")
                     and ticket.get("servicenow_mode") != "Live ServiceNow Instance"
-                    and automation_result.get("mode") != "SIMULATED_REAL_ACTION"
                 ):
                     update_servicenow_incident(
                         ticket["servicenow_incident"],
