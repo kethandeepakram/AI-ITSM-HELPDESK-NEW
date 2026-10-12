@@ -23,7 +23,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Hugging Face Qwen2.5-1.5B-Instruct run locally through Transformers, sentence-transformers embeddings, rule-based classification, lexical-overlap fallback; optional hosted Hugging Face API |
+| AI / NLP | Hugging Face Qwen2.5-0.5B-Instruct run locally through Transformers, sentence-transformers embeddings, rule-based classification, lexical-overlap fallback; optional hosted Hugging Face API |
 | Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
@@ -91,7 +91,7 @@ The exact files may evolve as the project is developed.
 - Node.js 18 or later and npm
 - Git
 
-MongoDB Atlas and hosted Hugging Face inference are optional for local exploration. The default LLM path downloads the public Qwen2.5-1.5B-Instruct model from Hugging Face and runs it locally through Transformers, so it does not consume hosted inference credits. The model weights require less memory than the 1.5B model, though enough RAM and disk space are still needed; the first model load can take time.
+MongoDB Atlas and hosted Hugging Face inference are optional for local exploration. The default LLM path downloads the public Qwen2.5-0.5B-Instruct model from Hugging Face and runs it locally through Transformers, so it does not consume hosted inference credits. It uses less memory than larger models, though it still needs adequate RAM and disk space; the first model and embedding-model loads can take time. Ticket classification uses deterministic rules by default so a typical chat request doesn't need a second LLM generation call.
 
 ## Run locally
 
