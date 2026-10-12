@@ -1,4 +1,5 @@
 import logging
+import re
 import threading
 
 from app.config import settings
@@ -157,6 +158,40 @@ def generate_llm_text(
     return None
 
 
+
+def _clean_generated_response(response: str | None) -> str | None:
+    """
+    Normalize model output for the plain-text chat UI.
+    Reject responses with empty numbered/bulleted steps so the caller can use
+    the authoritative RAG article rather than display an incomplete answer.
+    """
+    if not isinstance(response, str) or len(response.strip()) < 20:
+        return None
+
+    lines = []
+    for raw_line in response.splitlines():
+        line = raw_line.strip()
+
+        # Strip common Markdown that the React chat view currently displays literally.
+        line = re.sub(r"^#{1,6}\\s*", "", line)
+        line = re.sub(r"\\*\\*(.*?)\\*\\*", r"\\1", line)
+        line = re.sub(r"__(.*?)__", r"\\1", line)
+        line = re.sub(r"(?<!\\*)\\*([^*]+)\\*(?!\\*)", r"\\1", line)
+
+        # Empty numbered/bullet items are a structural defect. Reject the full
+        # model answer and fall back to the retrieved knowledge article.
+        if re.match(r"^\\s*(?:\\d+[.)]|[-*•])\\s*$", line):
+            return None
+        if re.match(r"^\\s*\\d+[.)]\\s*$", line):
+            return None
+
+        lines.append(line)
+
+    cleaned = "\\n".join(lines)
+    cleaned = re.sub(r"\\n{3,}", "\\n\\n", cleaned).strip()
+    return cleaned if len(cleaned) >= 20 else None
+
+
 def generate_ai_response(
     message: str,
     analysis: dict,
@@ -218,10 +253,13 @@ def generate_ai_response(
         {
             "role": "system",
             "content": (
-                "You are an enterprise IT Helpdesk AI Assistant. Base your response ONLY "
-                "on the provided approved Knowledge Base snippet. Do not invent policies, "
-                "commands, or URLs. If the article does not answer the question, say so. "
-                "Be polite, clear, and actionable."
+                "You are an enterprise IT Helpdesk assistant. Treat the supplied knowledge "
+                "article as the only source of troubleshooting facts. Never add VPN, network, "
+                "software, settings, commands, or other advice unless that exact action is "
+                "supported by the article and relevant to the employee's question. Give at most "
+                "3 concise numbered steps, and only when supported by the article. Never output "
+                "an empty step or placeholder number. If the question is not answered by the "
+                "article, say so. Use plain text without Markdown bold markers."
             ),
         },
         {
@@ -237,8 +275,13 @@ def generate_ai_response(
     response_text = generate_llm_text(
         messages,
         max_new_tokens=settings.HF_MAX_NEW_TOKENS,
-        temperature=0.2,
+        temperature=0.1,
     )
+    response_text = _clean_generated_response(response_text)
+    if response_text is None:
+        logger.warning(
+            "Generated helpdesk answer was empty or structurally invalid; using the retrieved article."
+        )
 
     if response_text:
         if settings.LLM_PROVIDER == "transformers":
