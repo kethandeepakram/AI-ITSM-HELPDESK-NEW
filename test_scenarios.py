@@ -57,6 +57,75 @@ def test_rag_chunking_and_lexical_fallback(monkeypatch):
     assert results[0]["score"] >= 0.22
     assert results[0]["article"]["content"]
 
+
+def test_chroma_vector_search_with_fake_store(monkeypatch):
+    class FakeEmbeddingModel:
+        def _embed(self, text):
+            lowered = str(text).lower()
+            return [1.0, 0.0] if "outlook" in lowered or "synchronization" in lowered else [0.0, 1.0]
+
+        def encode(self, values, normalize_embeddings=True, show_progress_bar=False):
+            if isinstance(values, str):
+                return rag_service.np.asarray(self._embed(values), dtype=float)
+            return rag_service.np.asarray([self._embed(value) for value in values], dtype=float)
+
+    class FakeChromaCollection:
+        def __init__(self):
+            self.records = {}
+            self.upsert_calls = 0
+            self.query_calls = 0
+
+        def upsert(self, ids, documents, metadatas, embeddings):
+            self.upsert_calls += 1
+            for item_id, document, metadata, embedding in zip(ids, documents, metadatas, embeddings):
+                self.records[item_id] = {
+                    "document": document,
+                    "metadata": metadata,
+                    "embedding": embedding,
+                }
+
+        def get(self, include=None):
+            return {"ids": list(self.records.keys()), "metadatas": [item["metadata"] for item in self.records.values()]}
+
+        def delete(self, ids):
+            for item_id in ids:
+                self.records.pop(item_id, None)
+
+        def query(self, query_embeddings, n_results, include):
+            self.query_calls += 1
+            query_vector = query_embeddings[0]
+            ranked = []
+            for item_id, record in self.records.items():
+                vector = record["embedding"]
+                similarity = sum(a * b for a, b in zip(query_vector, vector))
+                ranked.append((similarity, item_id, record))
+            ranked.sort(key=lambda item: item[0], reverse=True)
+            ranked = ranked[:n_results]
+            return {
+                "ids": [[item_id for _, item_id, _ in ranked]],
+                "documents": [[record["document"] for _, _, record in ranked]],
+                "metadatas": [[record["metadata"] for _, _, record in ranked]],
+                "distances": [[1.0 - similarity for similarity, _, _ in ranked]],
+            }
+
+    fake_model = FakeEmbeddingModel()
+    fake_collection = FakeChromaCollection()
+    monkeypatch.setattr(rag_service, "_get_embedding_model", lambda: fake_model)
+    monkeypatch.setattr(rag_service, "_load_articles", lambda: KNOWLEDGE_ARTICLES)
+    monkeypatch.setattr(rag_service, "_get_chroma_collection", lambda: fake_collection)
+    monkeypatch.setattr(rag_service, "_vector_index_signature", None)
+
+    results = rag_service.search_knowledge_base(
+        "How do I troubleshoot Outlook synchronization?",
+        top_k=3,
+    )
+
+    assert fake_collection.upsert_calls == 1
+    assert fake_collection.query_calls == 1
+    assert results, "Chroma retrieval should return a relevant article"
+    assert "Outlook" in results[0]["article"]["title"]
+    assert results[0]["semantic_score"] > 0.9
+
 def test_rule_based_safety_and_intent_guards():
     outage = _rule_based_classification(
         "The production server is down and multiple employees cannot access the application"
