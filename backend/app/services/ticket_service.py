@@ -84,13 +84,19 @@ def create_ticket(message: str, auto_execute_self_heal: bool = True) -> dict:
                     }
                 )
 
-                # Update ServiceNow
-                if ticket.get("servicenow_incident"):
+                # The current automation service is a demo simulator. It may
+                # update the local mock incident for demonstration, but must not
+                # resolve a real ServiceNow incident without performing real remediation.
+                if (
+                    ticket.get("servicenow_incident")
+                    and ticket.get("servicenow_mode") != "Live ServiceNow Instance"
+                    and automation_result.get("mode") != "SIMULATED_REAL_ACTION"
+                ):
                     update_servicenow_incident(
                         ticket["servicenow_incident"],
                         {
                             "state": "Resolved",
-                            "close_notes": f"Auto-resolved by AI Agent via {act}."
+                            "close_notes": f"Demo workflow resolved the simulated incident via {act}."
                         }
                     )
 
