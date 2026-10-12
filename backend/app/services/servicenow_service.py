@@ -211,7 +211,12 @@ def update_servicenow_incident(incident_number: str, updates: dict) -> dict:
         {"incident_number": incident_number},
         {"$set": safe_updates},
     )
-    if not result.get("matched_count", result.get("modified_count", 0)):
+    matched_count = (
+        result.get("matched_count", result.get("modified_count", 0))
+        if isinstance(result, dict)
+        else getattr(result, "matched_count", 0)
+    )
+    if not matched_count:
         return {"success": False, "incident_number": incident_number, "message": f"Mock incident {incident_number} not found."}
     return {
         "success": True,
