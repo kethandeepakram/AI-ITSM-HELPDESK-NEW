@@ -9,7 +9,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 - **Ticket intake and classification** — analyze IT requests, assign categories and priorities, suggest resolutions, and identify tickets requiring escalation.
 - **Helpdesk chatbot** — submit IT issues and retrieve relevant knowledge-base guidance.
 - **ITSM dashboard** — browse tickets, filter by status and priority, and inspect ticket details.
-- **RAG knowledge base** — search IT support articles and provide grounded troubleshooting guidance. The project can fall back to TF-IDF when transformer embeddings are unavailable.
+- **RAG knowledge base** — search IT support articles and provide grounded troubleshooting guidance. The project falls back to lexical-overlap scoring when transformer embeddings are unavailable.
 - **Self-healing workflow demonstrations** — examples include password reset, account unlock, VPN checks, and software installation requests.
 - **Software provisioning catalogue** — validate supported software requests and display provisioning records.
 - **ServiceNow integration layer** — support the configured ServiceNow integration or a mock/fallback mode, depending on environment settings.
@@ -109,7 +109,7 @@ MONGODB_DATABASE=itsm_helpdesk
 HF_TOKEN=
 ```
 
-Use the variable names required by your local configuration. Leave optional integrations blank when you want to use fallback mode. **Never commit your real `.env` file, credentials, or API tokens.**
+Use the variable names required by your local configuration. Leave optional integrations blank when you want to use fallback mode. **Never commit your real `.env` file, credentials, or API tokens.** Set `CORS_ORIGINS` to the exact frontend origin(s), comma-separated, when running the frontend from a deployed URL; the template defaults only cover local Vite development.
 
 Install backend dependencies and start FastAPI:
 
