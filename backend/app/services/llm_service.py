@@ -81,13 +81,20 @@ def generate_ai_response(
                 f"Employee Question: {message}\n"
                 f"Provide a helpful step-by-step resolution based only on this article:"
             )
-            resp = client.text_generation(
-                prompt=f"<|system|>\n{system_prompt}\n<|user|>\n{user_prompt}\n<|assistant|>",
+            # Use the chat-completion API for instruction/chat models. Hugging
+            # Face Inference Providers support chat completion across providers;
+            # the legacy text-generation task may not be available for a model.
+            completion = client.chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
                 model=settings.HF_LLM_MODEL,
-                max_new_tokens=220,
-                temperature=0.2
+                max_tokens=220,
+                temperature=0.2,
             )
-            if resp and len(resp.strip()) > 20:
+            resp = completion.choices[0].message.content
+            if isinstance(resp, str) and len(resp.strip()) > 20:
                 return {
                     "text": resp.strip(),
                     "grounded": True,
@@ -95,8 +102,18 @@ def generate_ai_response(
                     "source_id": article.get("id"),
                     "model_used": f"Hugging Face ({settings.HF_LLM_MODEL})"
                 }
+            logger.warning(
+                "Hugging Face chat completion returned an empty response for model %s; "
+                "using the grounded knowledge fallback.",
+                settings.HF_LLM_MODEL,
+            )
         except Exception as e:
-            logger.info(f"Hugging Face LLM generation note: {e}")
+            logger.warning(
+                "Hugging Face chat completion failed for model %s; using the grounded "
+                "knowledge fallback. Error: %s",
+                settings.HF_LLM_MODEL,
+                e,
+            )
 
     # High-quality deterministic grounded response
     title = article.get("title", "IT Troubleshooting Guide")
