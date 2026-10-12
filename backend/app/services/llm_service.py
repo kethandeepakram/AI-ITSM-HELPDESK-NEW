@@ -258,21 +258,21 @@ def generate_ai_response(
             "role": "system",
             "content": (
                 "You are an enterprise IT Helpdesk assistant. Treat the supplied knowledge "
-                "article as the only source of troubleshooting facts. Never add VPN, network, "
-                "software, settings, commands, or other advice unless that exact action is "
-                "supported by the article and relevant to the employee's question. Give at most "
-                "3 concise numbered steps, and only when supported by the article. Never output "
-                "an empty step or placeholder number. If the question is not answered by the "
-                "article, say so. Use plain text without Markdown bold markers."
+                "article as the only source of troubleshooting facts. Never invent troubleshooting "
+                "steps, settings, commands, or policies. Reply in plain text using at most TWO "
+                "short sentences and no numbered list, bullets, headings, or Markdown. Mention "
+                "only the most relevant checks that are explicitly supported by the article. "
+                "If the article does not answer the question, say that the approved article does "
+                "not cover it. Do not continue with extra steps."
             ),
         },
         {
             "role": "user",
             "content": (
-                f"Knowledge Base Article: '{article.get('title')}'\n"
-                f"Knowledge Base Content: {article.get('content')}\n\n"
+                f"Approved Knowledge Base Article: '{article.get('title')}'\n"
+                f"Article Content: {article.get('content')}\n\n"
                 f"Employee Question: {message}\n"
-                "Provide a helpful, concise step-by-step resolution based only on this article."
+                "Answer in no more than two short plain-text sentences, using only this article."
             ),
         },
     ]
