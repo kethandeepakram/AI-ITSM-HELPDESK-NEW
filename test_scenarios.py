@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database.mongodb import LocalDatabase
 from app.services.ai_service import _rule_based_classification
+from app.services.llm_service import generate_ai_response
 
 client = TestClient(app)
 
@@ -45,6 +46,22 @@ def test_rule_based_safety_and_intent_guards():
     assert outage["automation_possible"] is False
     assert outage["automation_action"] is None
     assert outage["assignment_group"] == "Infrastructure / L2 Support"
+
+    # A highly scored but unrelated article must never replace critical-incident handling.
+    response = generate_ai_response(
+        "The production server is down and multiple employees cannot access the application",
+        outage,
+        {
+            "article": {
+                "title": "Software Installation Request",
+                "content": "Install the approved software from the catalog."
+            },
+            "score": 0.99,
+        },
+    )
+    assert response["grounded"] is False
+    assert "Critical production incident" in response["text"]
+    assert "Install the approved software" not in response["text"]
 
     install = _rule_based_classification("Please install Microsoft Teams on my laptop")
     assert install["subcategory"] == "Software Provisioning"
