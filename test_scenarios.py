@@ -466,6 +466,34 @@ def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
     assert any(entry.get("status") == "Simulated" for entry in audit_entries)
 
 def test_rule_based_safety_and_intent_guards():
+    company_wide_outage_message = (
+        "The entire company network is down and all employees cannot access critical business systems"
+    )
+    company_wide_outage = _rule_based_classification(company_wide_outage_message)
+    assert company_wide_outage["priority"] == "P1"
+    assert company_wide_outage["impact"] == "Multiple Users"
+    assert company_wide_outage["category"] == "Network"
+    assert company_wide_outage["subcategory"] == "Enterprise Network Outage"
+    assert company_wide_outage["should_escalate"] is True
+    assert company_wide_outage["automation_possible"] is False
+    assert company_wide_outage["automation_action"] is None
+    assert company_wide_outage["assignment_group"] == "Infrastructure / L2 Support"
+
+    company_outage_response = generate_ai_response(
+        company_wide_outage_message,
+        company_wide_outage,
+        {
+            "article": {
+                "title": "Wi-Fi Troubleshooting",
+                "content": "Check whether the corporate SSID is correct.",
+            },
+            "score": 0.99,
+        },
+    )
+    assert company_outage_response["grounded"] is False
+    assert "Critical incident detected" in company_outage_response["text"]
+    assert "corporate SSID" not in company_outage_response["text"]
+
     outage = _rule_based_classification(
         "The production server is down and multiple employees cannot access the application"
     )
@@ -488,7 +516,7 @@ def test_rule_based_safety_and_intent_guards():
         },
     )
     assert response["grounded"] is False
-    assert "Critical production incident" in response["text"]
+    assert "Critical incident detected" in response["text"]
     assert "Install the approved software" not in response["text"]
 
     install = _rule_based_classification("Please install Microsoft Teams on my laptop")
