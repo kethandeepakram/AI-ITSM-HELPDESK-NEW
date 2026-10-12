@@ -151,6 +151,8 @@ def test_all_scenarios():
     assert d5["confidence_score"] < 0.65
     assert d5["escalation_required"] is True
     assert d5["is_grounded"] is False
+    assert d5["ticket"]["status"] == "Escalated"
+    assert d5["servicenow_incident"]["success"] is True
     print(f"Prompt: {d5['prompt']}")
     print(f"Confidence Score: {d5['confidence_score']} (Below threshold)")
     print(f"Grounded in KB: {d5['is_grounded']}")
