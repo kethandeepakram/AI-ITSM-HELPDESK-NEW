@@ -299,6 +299,11 @@ function TicketDetails({ ticket, onBack }) {
           </p>
 
           <p>
+            <strong>Execution Mode:</strong>{" "}
+            {ticket.automation_result?.mode || (ticket.automation_status ? "SIMULATED (legacy record)" : "Not executed")}
+          </p>
+
+          <p>
             <strong>Automation Action:</strong>{" "}
             {ticket.automation_action || "None"}
           </p>
@@ -314,7 +319,7 @@ function TicketDetails({ ticket, onBack }) {
                 fontWeight: "bold",
               }}
             >
-              ✅ Self-healing workflow completed successfully
+              ✅ Simulated workflow completed; no real endpoint or directory change was made.
             </div>
           )}
         </div>
