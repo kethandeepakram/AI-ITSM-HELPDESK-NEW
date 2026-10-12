@@ -37,7 +37,7 @@ class Settings:
     HF_TOKEN: str | None = os.getenv("HF_TOKEN") or None
     HF_LLM_MODEL: str = os.getenv(
         "HF_LLM_MODEL",
-        "Qwen/Qwen2.5-1.5B-Instruct",
+        "Qwen/Qwen2.5-0.5B-Instruct",
     )
     HF_EMBEDDING_MODEL: str = os.getenv(
         "HF_EMBEDDING_MODEL",
@@ -46,7 +46,9 @@ class Settings:
     # transformers = local model; huggingface_api = hosted/credit-limited inference;
     # fallback = grounded knowledge retrieval without generation (useful for CI).
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "transformers").strip().lower()
-    HF_MAX_NEW_TOKENS: int = int(os.getenv("HF_MAX_NEW_TOKENS", "220"))
+    # Skip a second LLM call for ticket classification by default; deterministic rules are fast.
+    HF_REFINE_TICKET_TEXT: bool = os.getenv("HF_REFINE_TICKET_TEXT", "false").lower() in ("true", "1", "yes")
+    HF_MAX_NEW_TOKENS: int = int(os.getenv("HF_MAX_NEW_TOKENS", "96"))
 
     CHROMA_PERSIST_DIRECTORY: str = os.getenv(
         "CHROMA_PERSIST_DIRECTORY",
