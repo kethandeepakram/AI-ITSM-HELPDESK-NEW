@@ -91,7 +91,7 @@ The exact files may evolve as the project is developed.
 - Node.js 18 or later and npm
 - Git
 
-MongoDB Atlas and hosted Hugging Face inference are optional for local exploration. The default LLM path downloads the public Qwen2.5-1.5B-Instruct model from Hugging Face and runs it locally through Transformers, so it does not consume hosted inference credits. The model weights require several GB of disk space and sufficient RAM; the first model load can take time.
+MongoDB Atlas and hosted Hugging Face inference are optional for local exploration. The default LLM path downloads the public Qwen2.5-1.5B-Instruct model from Hugging Face and runs it locally through Transformers, so it does not consume hosted inference credits. The model weights require less memory than the 1.5B model, though enough RAM and disk space are still needed; the first model load can take time.
 
 ## Run locally
 
@@ -104,7 +104,7 @@ cd AI-ITSM-HELPDESK-NEW
 
 ### 2. Select the free Hugging Face model (local inference)
 
-The default is [Qwen/Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct), a public Apache-2.0 model. Transformers downloads the weights into the local Hugging Face cache at first use. This runs on your computer and does not call Hugging Face Inference Providers or spend hosted inference credits. An HF token is not needed for this public model.
+The default is [Qwen/Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct), a public Apache-2.0 model. Transformers downloads the weights into the local Hugging Face cache at first use. This runs on your computer and does not call Hugging Face Inference Providers or spend hosted inference credits. An HF token is not needed for this public model.
 
 This model is much smaller than larger LLMs, but still needs several GB of disk and system memory, and CPU generation may be slow. If your computer cannot load it, the app keeps the grounded knowledge-base fallback.
 
@@ -124,9 +124,10 @@ Open `backend/.env` and set the values needed by your configuration. For example
 MONGODB_URI=
 MONGODB_DATABASE=itsm_helpdesk
 LLM_PROVIDER=transformers
+HF_REFINE_TICKET_TEXT=false
 HF_TOKEN=
-HF_LLM_MODEL=Qwen/Qwen2.5-1.5B-Instruct
-HF_MAX_NEW_TOKENS=220
+HF_LLM_MODEL=Qwen/Qwen2.5-0.5B-Instruct
+HF_MAX_NEW_TOKENS=96
 HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 CHROMA_PERSIST_DIRECTORY=chroma_data
 CHROMA_COLLECTION_NAME=itsm_knowledge_chunks
