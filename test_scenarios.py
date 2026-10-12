@@ -249,6 +249,52 @@ def test_transformers_unavailable_uses_grounded_fallback(monkeypatch):
     assert "Outlook Synchronization" in output["text"]
 
 
+
+def test_malformed_generated_steps_fall_back_to_knowledge_article(monkeypatch):
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+    monkeypatch.setattr(
+        llm_service,
+        "_generate_with_transformers",
+        lambda messages, max_new_tokens, temperature: (
+            "To troubleshoot Outlook synchronization issues:\\n\\n"
+            "1. **Check Internet Connection**: Ensure you have a stable internet connection.\\n"
+            "2. **Verify VPN Connection**: If using a VPN, make sure it works properly.\\n"
+            "3."
+        ),
+    )
+
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook synchronization settings.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Microsoft Outlook Mailbox Synchronization Troubleshooting",
+                "content": (
+                    "To resolve Outlook email synchronization issues:\\n"
+                    "1. Check the Outlook status bar for Disconnected or Trying to connect.\\n"
+                    "2. Use Send/Receive All Folders or press F9.\\n"
+                    "3. Verify Cached Exchange Mode is enabled.\\n"
+                    "4. Rebuild the local OST cache only if earlier steps fail."
+                ),
+            },
+            "score": 0.8,
+        },
+    )
+
+    assert output["model_used"] == "Grounded Knowledge Retrieval Engine"
+    assert "Cached Exchange Mode" in output["text"]
+    assert "Send/Receive All Folders" in output["text"]
+    assert "\\n3." not in output["text"]
+
+
+
 def test_transformers_ticket_classification_refinement(monkeypatch):
     from app.services import ai_service
 
