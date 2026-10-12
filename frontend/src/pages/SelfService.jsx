@@ -8,7 +8,7 @@ export default function SelfService({ onNavigate }) {
   const services = [
     {
       title: "Self-Service Password Reset",
-      description: "Instantly reset expired Active Directory passwords via automated biometric/SMS challenge.",
+      description: "Demonstrates the password-reset workflow; no real Active Directory password is changed and no SMS/OTP is sent.",
       icon: "🔐",
       action: "password_reset",
       category: "Account & Access",
@@ -16,7 +16,7 @@ export default function SelfService({ onNavigate }) {
     },
     {
       title: "Account Lockout Resolution",
-      description: "Detect and release account lockouts caused by repeated failed login attempts.",
+      description: "Demonstrates account-unlock steps; no real directory account is modified.",
       icon: "🔓",
       action: "account_unlock",
       category: "Account & Access",
@@ -24,7 +24,7 @@ export default function SelfService({ onNavigate }) {
     },
     {
       title: "VPN Diagnostic & Self-Heal",
-      description: "Verify tunnel health to vpn.company.internal, flush DNS, and cycle virtual network adapters.",
+      description: "Demonstrates VPN diagnostics; no real gateway is contacted and no network adapter is changed.",
       icon: "🌐",
       action: "vpn_status_check",
       category: "Network",
@@ -32,7 +32,7 @@ export default function SelfService({ onNavigate }) {
     },
     {
       title: "Software Catalog Provisioning",
-      description: "Request enterprise tools like Visual Studio Code, Docker Desktop, or Postman with instant approval.",
+      description: "Demonstrates catalogue validation and mock provisioning; no software is installed on an endpoint.",
       icon: "💻",
       action: "software_install",
       category: "Software",
@@ -40,7 +40,7 @@ export default function SelfService({ onNavigate }) {
     },
     {
       title: "Local Cache Purge & Rebuild",
-      description: "Rebuild Outlook OST sync caches and purge temporary roaming profile app data.",
+      description: "Demonstrates cache-repair steps; no local files or Outlook cache are modified.",
       icon: "🧹",
       action: "cache_clear",
       category: "Software",
@@ -48,7 +48,7 @@ export default function SelfService({ onNavigate }) {
     },
     {
       title: "Wi-Fi & Service Restarter",
-      description: "Restart WLAN AutoConfig and Network Location Awareness services on your workstation.",
+      description: "Demonstrates service-restart steps; no Windows service is restarted.",
       icon: "📶",
       action: "service_restart",
       category: "Network",
@@ -101,7 +101,7 @@ export default function SelfService({ onNavigate }) {
           🙋 Employee IT Self-Service Portal
         </h1>
         <p style={{ color: "#64748b", fontSize: "15px", margin: 0 }}>
-          Resolve common workstation and access problems without waiting in an IT support queue. Actions trigger intelligent automation and log a full audit trail.
+          Explore common workstation and access scenarios. Actions run simulated workflows and write demo audit records; they do not modify real enterprise systems.
         </p>
       </div>
 
