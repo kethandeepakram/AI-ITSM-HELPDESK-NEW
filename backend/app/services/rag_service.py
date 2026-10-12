@@ -47,7 +47,7 @@ def compute_lexical_similarity(query: str, article: dict) -> float:
     def terms(value: str) -> set[str]:
         return {
             word.lower()
-            for word in re.findall(r"\\b[a-zA-Z0-9_]+\\b", str(value or ""))
+            for word in re.findall(r"\b[a-zA-Z0-9_]+\b", str(value or ""))
             if len(word) >= 3 and word.lower() not in stop_words
         }
 
