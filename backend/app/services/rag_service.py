@@ -36,21 +36,48 @@ def _tokenize(text: str) -> set:
 import re
 
 def compute_lexical_similarity(query: str, article: dict) -> float:
-    q_words = set(w.lower() for w in re.findall(r"\b\w{3,}\b", query))
-    if not q_words:
+    """Score how much meaningful query vocabulary is supported by an article."""
+    stop_words = {
+        "the", "and", "for", "with", "from", "that", "this", "how", "what",
+        "when", "where", "why", "can", "you", "are", "not", "but", "into",
+        "please", "help", "need", "want", "have", "has", "since", "about",
+        "tell", "show", "give", "does", "cannot", "unable"
+    }
+
+    def terms(value: str) -> set[str]:
+        return {
+            word.lower()
+            for word in re.findall(r"\\b[a-zA-Z0-9_]+\\b", str(value or ""))
+            if len(word) >= 3 and word.lower() not in stop_words
+        }
+
+    query_terms = terms(query)
+    if not query_terms:
         return 0.0
 
-    title_words = set(w.lower() for w in re.findall(r"\b\w{3,}\b", article.get("title", "")))
-    content_words = set(w.lower() for w in re.findall(r"\b\w{3,}\b", article.get("content", "")))
-    keywords = set(k.lower() for k in article.get("keywords", []))
+    title_terms = terms(article.get("title", ""))
+    content_terms = terms(article.get("content", ""))
+    keyword_terms = set()
+    for keyword in article.get("keywords", []) or []:
+        keyword_terms.update(terms(str(keyword)))
+    # Category metadata can be a useful signal, but should not dominate.
+    keyword_terms.update(terms(article.get("category", "")))
+    keyword_terms.update(terms(article.get("subcategory", "")))
 
-    # Calculate overlaps
-    keyword_matches = len(q_words.intersection(keywords))
-    title_matches = len(q_words.intersection(title_words))
-    content_matches = len(q_words.intersection(content_words))
+    def coverage(corpus_terms: set[str]) -> float:
+        return len(query_terms.intersection(corpus_terms)) / len(query_terms)
 
-    score = (keyword_matches * 0.35) + (title_matches * 0.30) + (min(content_matches, 5) * 0.07)
-    return min(score, 0.98)
+    keyword_coverage = coverage(keyword_terms)
+    title_coverage = coverage(title_terms)
+    content_coverage = coverage(content_terms)
+
+    # Exact keywords/title evidence is stronger than a common word in long text.
+    score = (
+        0.50 * keyword_coverage
+        + 0.30 * title_coverage
+        + 0.20 * content_coverage
+    )
+    return round(min(score, 0.98), 4)
 
 def search_knowledge_base(query: str, top_k: int = 3) -> list:
     """
@@ -113,10 +140,13 @@ def search_knowledge_base(query: str, top_k: int = 3) -> list:
             "relevance_percentage": f"{min(int(combined_score * 100), 99)}%"
         })
 
-    # Sort descending by score
-    results.sort(key=lambda x: x["score"], reverse=True)
-    top_results = results[:top_k]
+    # Filter irrelevant matches before applying top_k so a low-scoring article
+    # cannot crowd out a more relevant article later in the list.
+    relevant_results = [item for item in results if item["score"] >= 0.22]
+    relevant_results.sort(key=lambda item: item["score"], reverse=True)
 
-    # Filter out spurious matches if relevance is too low (Anti-hallucination safeguard)
-    filtered = [r for r in top_results if r["score"] >= 0.20]
-    return filtered
+    try:
+        result_limit = max(0, int(top_k))
+    except (TypeError, ValueError):
+        result_limit = 3
+    return relevant_results[:result_limit]
