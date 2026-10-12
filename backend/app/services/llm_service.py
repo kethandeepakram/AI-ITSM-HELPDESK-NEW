@@ -301,13 +301,11 @@ def generate_ai_response(
         }
 
     title = article.get("title", "IT Troubleshooting Guide")
-    content = article.get("content", "")
+    content = str(article.get("content", "") or "").strip()
     kb_id = article.get("id", "KB-REF")
-    grounded_text = (
-        f"Based on enterprise documentation **{title}** ({kb_id}):\n\n"
-        f"{content}\n\n"
-        f"💡 **Suggested Next Step**: {analysis.get('suggested_resolution')}"
-    )
+    # Display the authoritative source article as clean text, without a second
+    # potentially conflicting suggestion appended from the ticket classifier.
+    grounded_text = f"Source: {title} ({kb_id})\n\n{content}"
     return {
         "text": grounded_text,
         "grounded": True,
