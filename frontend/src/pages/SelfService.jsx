@@ -63,15 +63,27 @@ export default function SelfService({ onNavigate }) {
 
       // Create ticket first
       const ticketRes = await api.createTicket(service.prompt);
-      const autoRes = await api.executeAutomation(
-        service.action,
-        ticketRes.ticket.ticket_id,
-        "Visual Studio Code"
-      );
+      const ticket = ticketRes.ticket;
+
+      // Ticket creation already executes the classifier-approved action when
+      // eligible. Reuse that result rather than running the same action twice.
+      let autoRes = ticket?.automation_result;
+      const alreadyExecuted =
+        ticket?.automation_status === "Success" &&
+        autoRes &&
+        autoRes.success === true;
+
+      if (!alreadyExecuted) {
+        autoRes = await api.executeAutomation(
+          service.action,
+          ticket.ticket_id,
+          "Visual Studio Code"
+        );
+      }
 
       setActionResult({
         service: service.title,
-        ticket: ticketRes.ticket,
+        ticket,
         automation: autoRes,
       });
     } catch (err) {
