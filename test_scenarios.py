@@ -264,6 +264,16 @@ def test_malformed_generated_steps_fall_back_to_knowledge_article(monkeypatch):
     )
     assert _clean_generated_response(malformed) is None
 
+    # The model has also returned a bare final number (for example, "6")
+    # without a period; this must trigger the same grounded fallback.
+    dangling_number = (
+        "To troubleshoot Outlook synchronization issues:\n"
+        "1. Check the Outlook status bar.\n"
+        "2. Select Send/Receive All Folders.\n"
+        "6"
+    )
+    assert _clean_generated_response(dangling_number) is None
+
     truncated_sentence = (
         "To troubleshoot Outlook synchronization issues:\n"
         "1. Check Outlook's status bar.\n"
