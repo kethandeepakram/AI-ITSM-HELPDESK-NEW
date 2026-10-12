@@ -6,9 +6,9 @@ from app.services.servicenow_service import (
     create_servicenow_incident,
     get_servicenow_incident,
     update_servicenow_incident,
-    create_servicenow_service_request
+    create_servicenow_service_request,
+    list_servicenow_incidents,
 )
-from app.database.mongodb import get_servicenow_collection
 
 router = APIRouter(
     prefix="/api/servicenow",
@@ -28,13 +28,10 @@ def create_incident(ticket: dict):
 
 @router.get("/incidents")
 def list_incidents():
-    collection = get_servicenow_collection()
-    incidents = list(collection.find({}, {"_id": 0}).sort("created_at", -1))
-    return {
-        "success": True,
-        "count": len(incidents),
-        "incidents": incidents
-    }
+    result = list_servicenow_incidents()
+    if not result.get("success"):
+        raise HTTPException(status_code=502, detail=result.get("error", "Unable to list ServiceNow incidents"))
+    return result
 
 @router.get("/incident/{incident_number}")
 def fetch_incident(incident_number: str):
