@@ -246,14 +246,14 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             "ticket_id": ticket_id,
             "software": sw_title,
             "version": sw_info["version"],
-            "status": "Provisioning",
-            "servicenow_status": "Request created successfully",
+            "status": "Completed (Simulated)",
+            "servicenow_status": "Mock request created; provisioning workflow simulated",
             "workflow_steps": [
-                "1. Employee AI Intent Detection completed",
-                f"2. Software Catalogue verified: {sw_title} is {sw_info['status']}",
-                f"3. ServiceNow Service Request created ({req_id})",
-                "4. Mock Provisioning API dispatched to client agent",
-                "5. Status Update: Provisioning completed successfully"
+                "1. Employee AI intent detection completed",
+                f"2. Software catalogue verified: {sw_title} is {sw_info['status']}",
+                f"3. Mock ServiceNow service request created ({req_id})",
+                "4. Simulated provisioning step recorded; no endpoint agent was contacted",
+                "5. Demo workflow completed; no software was installed"
             ],
             "created_at": timestamp
         }
@@ -265,7 +265,7 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             target=f"Endpoint Package Manager / {sw_title}",
             actor="AI Provisioning Agent",
             status="Simulated",
-            details=f"Provisioned {sw_title} {sw_info['version']} to employee endpoint. ServiceNow Request {req_id}.",
+            details=f"Simulated provisioning workflow for {sw_title} {sw_info['version']}; no endpoint software was installed. Mock ServiceNow Request {req_id}.",
             ticket_id=ticket_id,
             request_id=req_id
         )
@@ -276,8 +276,8 @@ def execute_automation(action: str, ticket_id: str, software_name: str = "Visual
             "request_id": req_id,
             "software": sw_title,
             "version": sw_info["version"],
-            "status": "Provisioning",
-            "servicenow_message": "Request created successfully",
+            "status": "Completed (Simulated)",
+            "servicenow_message": "Mock request created; provisioning workflow simulated",
             "workflow": provisioning_record["workflow_steps"],
             "message": f"SIMULATION ONLY: '{sw_title}' passed the demo catalogue check and a mock provisioning workflow was recorded; no endpoint software was installed.",
             "timestamp": timestamp
