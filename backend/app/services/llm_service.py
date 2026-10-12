@@ -1,36 +1,160 @@
 import logging
-import requests
+import threading
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Load the model once per backend process. Serialize local inference to reduce
+# the risk of concurrent requests exhausting RAM on a development machine.
+_model_lock = threading.RLock()
+_cached_model_id: str | None = None
+_cached_tokenizer = None
+_cached_model = None
 
-def _ollama_chat(system_prompt: str, user_prompt: str) -> str | None:
-    """Call a locally running Ollama server. Return None when it is unavailable."""
-    url = f"{settings.OLLAMA_BASE_URL}/api/chat"
+
+def _generate_with_transformers(
+    messages: list[dict],
+    max_new_tokens: int,
+    temperature: float,
+) -> str | None:
+    """Run a public Hugging Face causal language model locally with Transformers."""
+    global _cached_model_id, _cached_tokenizer, _cached_model
+
     try:
-        response = requests.post(
-            url,
-            json={
-                "model": settings.OLLAMA_LLM_MODEL,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "stream": False,
-                "options": {"temperature": 0.2, "num_predict": 220},
-            },
-            timeout=settings.OLLAMA_TIMEOUT_SECONDS,
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        with _model_lock:
+            model_id = settings.HF_LLM_MODEL
+            if _cached_model is None or _cached_model_id != model_id:
+                logger.info(
+                    "Loading Hugging Face model %s locally; the first request may take time.",
+                    model_id,
+                )
+                token = settings.HF_TOKEN or None
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_id,
+                    token=token,
+                    trust_remote_code=False,
+                )
+
+                # Use half precision on CUDA GPUs. CPU float32 is more portable but
+                # needs several GB of RAM for the recommended 1.5B parameter model.
+                if torch.cuda.is_available():
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_id,
+                        token=token,
+                        torch_dtype=torch.float16,
+                        device_map="auto",
+                        trust_remote_code=False,
+                    )
+                else:
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_id,
+                        token=token,
+                        torch_dtype=torch.float32,
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=False,
+                    )
+                    model.to("cpu")
+
+                model.eval()
+                _cached_tokenizer = tokenizer
+                _cached_model = model
+                _cached_model_id = model_id
+
+            tokenizer = _cached_tokenizer
+            model = _cached_model
+
+            if getattr(tokenizer, "chat_template", None):
+                prompt = tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            else:
+                prompt = "\n\n".join(
+                    f"{item.get('role', 'user').upper()}: {item.get('content', '')}"
+                    for item in messages
+                ) + "\nASSISTANT:"
+
+            inputs = tokenizer(
+                prompt,
+                return_tensors="pt",
+                truncation=True,
+                max_length=2048,
+            )
+            model_device = next(model.parameters()).device
+            inputs = {key: value.to(model_device) for key, value in inputs.items()}
+
+            generation_args = {
+                "max_new_tokens": min(max(int(max_new_tokens), 1), 512),
+                "do_sample": temperature > 0,
+                "pad_token_id": tokenizer.eos_token_id,
+            }
+            if temperature > 0:
+                generation_args["temperature"] = max(float(temperature), 0.05)
+                generation_args["top_p"] = 0.9
+
+            with torch.inference_mode():
+                output_ids = model.generate(**inputs, **generation_args)
+
+            prompt_length = inputs["input_ids"].shape[-1]
+            answer_ids = output_ids[0][prompt_length:]
+            answer = tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
+            return answer if len(answer) > 20 else None
+    except Exception as exc:
+        # Do not fail ticket intake when model download/inference is unavailable.
+        logger.warning(
+            "Local Hugging Face model %s unavailable; using grounded fallback. Error: %s",
+            settings.HF_LLM_MODEL,
+            exc,
         )
-        response.raise_for_status()
-        data = response.json()
-        message = data.get("message", {})
-        text = message.get("content") if isinstance(message, dict) else None
-        return text.strip() if isinstance(text, str) and len(text.strip()) > 20 else None
-    except (requests.RequestException, ValueError, TypeError) as exc:
-        logger.warning("Ollama local inference unavailable; using knowledge fallback: %s", exc)
         return None
+
+
+def _generate_with_huggingface_api(
+    messages: list[dict],
+    max_new_tokens: int,
+    temperature: float,
+) -> str | None:
+    """Optional hosted Inference Providers route; it may require remaining credits."""
+    if not settings.HF_TOKEN:
+        logger.info("HF_TOKEN is empty; hosted Hugging Face inference is disabled.")
+        return None
+
+    try:
+        from huggingface_hub import InferenceClient
+
+        client = InferenceClient(api_key=settings.HF_TOKEN)
+        completion = client.chat_completion(
+            messages=messages,
+            model=settings.HF_LLM_MODEL,
+            max_tokens=min(max(int(max_new_tokens), 1), 512),
+            temperature=max(float(temperature), 0.01),
+        )
+        text = completion.choices[0].message.content
+        return text.strip() if isinstance(text, str) and len(text.strip()) > 20 else None
+    except Exception as exc:
+        logger.warning(
+            "Hosted Hugging Face inference unavailable; using grounded fallback. Error: %s",
+            exc,
+        )
+        return None
+
+
+def generate_llm_text(
+    messages: list[dict],
+    max_new_tokens: int = 220,
+    temperature: float = 0.2,
+) -> str | None:
+    """Select the configured LLM provider; no hosted inference credits are needed by default."""
+    if settings.LLM_PROVIDER == "transformers":
+        return _generate_with_transformers(messages, max_new_tokens, temperature)
+    if settings.LLM_PROVIDER == "huggingface_api":
+        return _generate_with_huggingface_api(messages, max_new_tokens, temperature)
+    return None
 
 
 def generate_ai_response(
@@ -39,9 +163,8 @@ def generate_ai_response(
     knowledge_base: dict | None
 ) -> dict:
     """
-    Generate a grounded helpdesk response.
-    Safety: critical/out-of-scope cases and weak retrieval never go to an LLM.
-    The approved knowledge article remains the only source of troubleshooting facts.
+    Generate a helpdesk response grounded in the approved RAG article.
+    Critical/escalated and weak-retrieval cases never go to an LLM.
     """
     article = knowledge_base.get("article", {}) if knowledge_base else {}
     try:
@@ -57,8 +180,7 @@ def generate_ai_response(
     is_out_of_scope = analysis.get("category") == "Out of Scope"
     must_escalate = bool(analysis.get("should_escalate")) or is_critical or is_out_of_scope
 
-    # Escalation takes precedence: never let an LLM answer a critical incident
-    # using a potentially unrelated article.
+    # Policy guard takes precedence over generated answers.
     if must_escalate or not has_kb:
         if is_critical:
             grounded_text = (
@@ -92,59 +214,45 @@ def generate_ai_response(
             "model_used": "AI Safety & Governance Policy Guard"
         }
 
-    system_prompt = (
-        "You are an enterprise IT Helpdesk AI Assistant. Base your response ONLY "
-        "on the provided approved Knowledge Base snippet. Do not invent policies, "
-        "commands, or URLs. If the article does not answer the question, say so. "
-        "Be polite, clear, and actionable."
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an enterprise IT Helpdesk AI Assistant. Base your response ONLY "
+                "on the provided approved Knowledge Base snippet. Do not invent policies, "
+                "commands, or URLs. If the article does not answer the question, say so. "
+                "Be polite, clear, and actionable."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Knowledge Base Article: '{article.get('title')}'\n"
+                f"Knowledge Base Content: {article.get('content')}\n\n"
+                f"Employee Question: {message}\n"
+                "Provide a helpful, concise step-by-step resolution based only on this article."
+            ),
+        },
+    ]
+    response_text = generate_llm_text(
+        messages,
+        max_new_tokens=settings.HF_MAX_NEW_TOKENS,
+        temperature=0.2,
     )
-    user_prompt = (
-        f"Knowledge Base Article: '{article.get('title')}'\n"
-        f"Knowledge Base Content: {article.get('content')}\n\n"
-        f"Employee Question: {message}\n"
-        "Provide a helpful, concise step-by-step resolution based only on this article."
-    )
 
-    # Prefer local Ollama so this path needs no hosted inference credits.
-    if settings.LLM_PROVIDER == "ollama":
-        response_text = _ollama_chat(system_prompt, user_prompt)
-        if response_text:
-            return {
-                "text": response_text,
-                "grounded": True,
-                "source_used": article.get("title"),
-                "source_id": article.get("id"),
-                "model_used": f"Ollama local ({settings.OLLAMA_LLM_MODEL})",
-            }
+    if response_text:
+        if settings.LLM_PROVIDER == "transformers":
+            model_used = f"Hugging Face Transformers local ({settings.HF_LLM_MODEL})"
+        else:
+            model_used = f"Hugging Face Inference Providers ({settings.HF_LLM_MODEL})"
+        return {
+            "text": response_text,
+            "grounded": True,
+            "source_used": article.get("title"),
+            "source_id": article.get("id"),
+            "model_used": model_used,
+        }
 
-    # Optional Hugging Face hosted inference, only when explicitly selected.
-    elif settings.LLM_PROVIDER == "huggingface" and settings.HF_TOKEN:
-        try:
-            from huggingface_hub import InferenceClient
-            client = InferenceClient(api_key=settings.HF_TOKEN)
-            completion = client.chat_completion(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                model=settings.HF_LLM_MODEL,
-                max_tokens=220,
-                temperature=0.2,
-            )
-            response_text = completion.choices[0].message.content
-            if isinstance(response_text, str) and len(response_text.strip()) > 20:
-                return {
-                    "text": response_text.strip(),
-                    "grounded": True,
-                    "source_used": article.get("title"),
-                    "source_id": article.get("id"),
-                    "model_used": f"Hugging Face ({settings.HF_LLM_MODEL})",
-                }
-        except Exception as exc:
-            logger.warning("Hugging Face inference failed; using knowledge fallback: %s", exc)
-
-    # Deterministic knowledge fallback remains available when Ollama is not
-    # installed/running, the model is absent, or any external call fails.
     title = article.get("title", "IT Troubleshooting Guide")
     content = article.get("content", "")
     kb_id = article.get("id", "KB-REF")
