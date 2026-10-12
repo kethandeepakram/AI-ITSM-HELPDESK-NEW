@@ -14,6 +14,7 @@ from app.main import app
 from app.database.mongodb import LocalDatabase
 from app.services.ai_service import _rule_based_classification
 from app.services.llm_service import generate_ai_response
+from app.services import llm_service
 from app.services import rag_service
 from app.services import automation_service
 from seed_knowledge import KNOWLEDGE_ARTICLES
@@ -128,6 +129,60 @@ def test_chroma_vector_search_with_fake_store(monkeypatch):
     assert results[0]["semantic_score"] > 0.9
 
 
+
+
+
+def test_huggingface_chat_completion_path(monkeypatch):
+    from types import SimpleNamespace
+    import huggingface_hub
+
+    class FakeInferenceClient:
+        def __init__(self, api_key=None):
+            assert api_key == "test-token"
+
+        def chat_completion(self, messages, model, max_tokens, temperature):
+            assert model == "Qwen/Qwen2.5-3B-Instruct"
+            assert len(messages) == 2
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            content="Check Outlook connection status, then run Send/Receive."
+                        )
+                    )
+                ]
+            )
+
+    monkeypatch.setattr(llm_service.settings, "HF_TOKEN", "test-token")
+    monkeypatch.setattr(
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct"
+    )
+    monkeypatch.setattr(
+        huggingface_hub, "InferenceClient", FakeInferenceClient
+    )
+
+    output = generate_ai_response(
+        message="How do I troubleshoot Outlook synchronization?",
+        analysis={
+            "priority": "P3",
+            "impact": "Individual",
+            "category": "Software",
+            "suggested_resolution": "Check Outlook connectivity.",
+        },
+        knowledge_base={
+            "article": {
+                "id": "KB1003",
+                "title": "Outlook Synchronization",
+                "content": "Check Outlook connectivity and Send/Receive.",
+            },
+            "score": 0.8,
+        },
+    )
+
+    assert output["grounded"] is True
+    assert output["model_used"] == "Hugging Face (Qwen/Qwen2.5-3B-Instruct)"
+    assert "Check Outlook connection status" in output["text"]
+    assert output["source_id"] == "KB1003"
 
 def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
     db = LocalDatabase()
