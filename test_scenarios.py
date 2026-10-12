@@ -261,6 +261,14 @@ def test_malformed_generated_steps_fall_back_to_knowledge_article(monkeypatch):
     )
     assert _clean_generated_response(malformed) is None
 
+    truncated_sentence = (
+        "To troubleshoot Outlook synchronization issues:\\n"
+        "1. Check Outlook's status bar.\\n"
+        "2. Select Send/Receive All Folders.\\n"
+        "3. Verify if folders are being"
+    )
+    assert _clean_generated_response(truncated_sentence) is None
+
     monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
     monkeypatch.setattr(llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
     monkeypatch.setattr(
