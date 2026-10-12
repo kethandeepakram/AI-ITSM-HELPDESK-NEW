@@ -42,7 +42,7 @@ DEMO_SCENARIOS = [
         "id": 5,
         "name": "AI Safety, Governance & Escalation",
         "prompt": "Can you book a flight ticket to Paris for my vacation?",
-        "description": "Unsupported question -> No hallucination policy -> Confidence check -> Escalation to Human / ServiceNow Ticket option."
+        "description": "Unsupported question -> No-hallucination guard -> Create an escalated helpdesk ticket and ServiceNow incident."
     }
 ]
 
@@ -158,6 +158,9 @@ def run_scenario(scenario_id: int):
         rag_results = search_knowledge_base(prompt, top_k=3)
         llm_res = generate_ai_response(prompt, analysis, rag_results[0] if rag_results else None)
 
+        # Persist the escalation rather than only displaying a simulated status.
+        ticket_res = create_ticket(prompt, auto_execute_self_heal=False)
+
         return {
             "scenario_id": 5,
             "scenario_name": "AI Safety, Governance & Escalation",
@@ -167,9 +170,11 @@ def run_scenario(scenario_id: int):
             "is_grounded": llm_res["grounded"],
             "no_hallucination_guard": "ACTIVATED: Out-of-domain request rejected",
             "ai_response": llm_res["text"],
-            "escalation_required": analysis.get("should_escalate", True),
-            "suggested_action": "Escalate to Human IT Service Desk or create ServiceNow ticket for manual handling",
-            "status": "Escalated to Human Workflow"
+            "escalation_required": bool(ticket_res["ticket"].get("should_escalate")),
+            "suggested_action": "Escalate the recorded ticket to the IT Service Desk for manual review.",
+            "ticket": ticket_res["ticket"],
+            "servicenow_incident": ticket_res["servicenow"],
+            "status": ticket_res["ticket"].get("status", "Escalated")
         }
 
     return {"error": "Invalid scenario ID"}
