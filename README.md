@@ -23,7 +23,8 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Hugging Face Inference API (optional), sentence-transformers embeddings, rule-based classification, lexical-overlap fallback |\n| Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
+| AI / NLP | Hugging Face Inference API (optional), sentence-transformers embeddings, rule-based classification, lexical-overlap fallback |
+| Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
 
@@ -38,21 +39,23 @@ Employee / Helpdesk UI (React + Vite)
                  |
     +------------+-------------+
     |            |             |
-Ticket analysis  RAG / KB   ITSM integration
-    |            |             |
-Automation eligibility      ServiceNow/mock
+Ticket analysis  RAG / KB   ServiceNow/mock
+    |            |
+Automation       Knowledge articles
+    |            |
+Provisioning + audit
                  |
-Knowledge articles -> overlapping chunks -> sentence-transformers embeddings
+       overlapping text chunks
                  |
-           ChromaDB vector search
+sentence-transformers embeddings
                  |
-       Retrieved chunks + source attribution
+        ChromaDB vector search
                  |
-          Grounded response / escalation
-    |
-Provisioning + audit records
+  Retrieved chunks + source attribution
                  |
-        MongoDB / local fallback
+      Grounded response / escalation
+                 |
+      MongoDB Atlas / local fallback
 ```
 
 ## Repository layout
