@@ -99,7 +99,8 @@ def test_all_scenarios():
     d3 = r3.json()
     assert d3["sources_attributed"], "RAG should return a relevant Outlook source"
     assert d3["analysis"]["subcategory"] == "Email / Outlook"
-    assert d3["is_grounded"] if "is_grounded" in d3 else True
+    assert "Outlook" in d3["sources_attributed"][0]["title"]
+    assert d3["grounded_llm_response"].strip()
     print(f"Prompt: {d3['prompt']}")
     print("Retrieved Sources:")
     for s in d3['sources_attributed']:
