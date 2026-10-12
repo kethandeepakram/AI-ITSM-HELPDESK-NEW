@@ -23,7 +23,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Hugging Face Inference API (optional), sentence-transformers (optional), rule-based classification, TF-IDF fallback |
+| AI / NLP | Hugging Face Inference API (optional), sentence-transformers (optional), rule-based classification, lexical-overlap retrieval fallback |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
 
@@ -171,7 +171,7 @@ Expected behavior depends on the configured rules and external integrations. Cri
 
 ## Known limitations
 
-- If sentence-transformers cannot load, knowledge retrieval may use the TF-IDF fallback rather than dense embeddings.
+- If sentence-transformers cannot load, knowledge retrieval uses lexical-overlap scoring when transformer embeddings cannot load.
 - ServiceNow and self-healing behaviors may use mock implementations depending on configuration.
 - The local in-memory database fallback is not durable across process restarts.
 - The prototype is not a production-ready ITSM replacement.
