@@ -297,7 +297,7 @@ export default function Dashboard({ onViewTicket, onNavigate }) {
                       </td>
                       <td style={{ padding: "12px 16px" }}>
                         {t.automation_status === "Success" ? (
-                          <span style={{ color: "#16a34a", fontWeight: "600" }}>⚡ Auto-Resolved</span>
+                          <span style={{ color: "#16a34a", fontWeight: "600" }}>⚡ Auto-Resolved (Simulated)</span>
                         ) : t.automation_possible ? (
                           <span style={{ color: "#2563eb" }}>Eligible</span>
                         ) : (
