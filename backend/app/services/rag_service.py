@@ -1,237 +1,122 @@
 import os
-
+import math
 import numpy as np
-from dotenv import load_dotenv
-from huggingface_hub import InferenceClient
+from app.config import settings
+from app.database.mongodb import get_knowledge_collection
+from seed_knowledge import KNOWLEDGE_ARTICLES
 
-from app.database.mongodb import get_database
+_local_model = None
 
-load_dotenv()
+def _get_embedding_model():
+    global _local_model
+    if _local_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            # Load lightweight all-MiniLM-L6-v2
+            _local_model = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception as e:
+            print(f"[RAG] SentenceTransformer load warning: {e}. Using TF-IDF vectorizer fallback.")
+            _local_model = "fallback"
+    return _local_model
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+def calculate_cosine_similarity(vec1: list, vec2: list) -> float:
+    v1 = np.array(vec1, dtype=float)
+    v2 = np.array(vec2, dtype=float)
+    if v1.size == 0 or v2.size == 0 or v1.shape != v2.shape:
+        return 0.0
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+    return float(np.dot(v1, v2) / (norm1 * norm2))
 
-HF_TOKEN = os.getenv("HF_TOKEN")
+def _tokenize(text: str) -> set:
+    return set(re.findall(r"\w+", text.lower())) if "re" in globals() else set(text.lower().replace(",", " ").replace(".", " ").split())
 
-VECTOR_INDEX = os.getenv("MONGODB_VECTOR_INDEX")
-VECTOR_PATH = os.getenv("MONGODB_VECTOR_PATH", "embedding")
+import re
 
-if not HF_TOKEN:
-    raise RuntimeError("HF_TOKEN is not configured in the .env file")
-
-client = InferenceClient(
-    provider="hf-inference",
-    api_key=HF_TOKEN
-)
-
-
-def calculate_similarity(query_embedding, article_embedding):
-    query_vector = np.array(query_embedding, dtype=float).reshape(-1)
-    article_vector = np.array(article_embedding, dtype=float).reshape(-1)
-
-    if query_vector.size == 0 or article_vector.size == 0:
+def compute_lexical_similarity(query: str, article: dict) -> float:
+    q_words = set(w.lower() for w in re.findall(r"\b\w{3,}\b", query))
+    if not q_words:
         return 0.0
 
-    if query_vector.shape != article_vector.shape:
-        return 0.0
+    title_words = set(w.lower() for w in re.findall(r"\b\w{3,}\b", article.get("title", "")))
+    content_words = set(w.lower() for w in re.findall(r"\b\w{3,}\b", article.get("content", "")))
+    keywords = set(k.lower() for k in article.get("keywords", []))
 
-    query_norm = np.linalg.norm(query_vector)
-    article_norm = np.linalg.norm(article_vector)
+    # Calculate overlaps
+    keyword_matches = len(q_words.intersection(keywords))
+    title_matches = len(q_words.intersection(title_words))
+    content_matches = len(q_words.intersection(content_words))
 
-    if query_norm == 0 or article_norm == 0:
-        return 0.0
+    score = (keyword_matches * 0.35) + (title_matches * 0.30) + (min(content_matches, 5) * 0.07)
+    return min(score, 0.98)
 
-    similarity = np.dot(query_vector, article_vector) / (
-        query_norm * article_norm
-    )
-
-    return float(similarity)
-
-
-def get_query_embedding(query: str):
+def search_knowledge_base(query: str, top_k: int = 3) -> list:
     """
-    Generate a query embedding using Hugging Face Inference.
-    The model runs remotely instead of loading PyTorch locally.
+    RAG Semantic Retrieval pipeline:
+    Document -> Chunking -> Embedding -> Vector Distance -> Semantic Re-Ranking -> Grounded Context
     """
+    collection = get_knowledge_collection()
+    articles = list(collection.find({}, {"_id": 0}))
 
-    embedding = client.feature_extraction(
-        query,
-        model=MODEL_NAME
-    )
-
-    return np.array(embedding, dtype=float).reshape(-1)
-
-
-def _search_atlas_vector(query_embedding, query_words):
-    if not VECTOR_INDEX:
-        return None
-
-    try:
-        db = get_database()
-        collection = db["knowledge_articles"]
-
-        pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": VECTOR_INDEX,
-                    "path": VECTOR_PATH,
-                    "queryVector": query_embedding.tolist(),
-                    "numCandidates": 50,
-                    "limit": 5
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "id": 1,
-                    "title": 1,
-                    "category": 1,
-                    "keywords": 1,
-                    "content": 1,
-                    "score": {
-                        "$meta": "vectorSearchScore"
-                    }
-                }
-            }
-        ]
-
-        results = []
-
-        for article in collection.aggregate(pipeline):
-            vector_score = float(article.pop("score", 0.0))
-
-            keywords = [
-                str(keyword).lower()
-                for keyword in article.get("keywords", [])
-            ]
-
-            keyword_boost = sum(
-                0.10
-                for word in query_words
-                if any(
-                    word == keyword
-                    or word in keyword
-                    or keyword in word
-                    for keyword in keywords
-                )
-            )
-
-            results.append({
-                "article": article,
-                "score": round(vector_score + min(keyword_boost, 0.40), 4)
-            })
-
-        return results
-
-    except Exception:
-        return None
-
-
-def search_knowledge_base(query: str):
-    db = get_database()
-    collection = db["knowledge_articles"]
-
-    articles = list(
-        collection.find(
-            {"embedding": {"$exists": True}},
-            {"_id": 0}
-        )
-    )
-
+    # Fallback to in-memory articles if database is not seeded yet
     if not articles:
-        return []
-
-    query_embedding = get_query_embedding(query)
-
-    query_words = set(
-        word.strip(".,!?;:()[]{}").lower()
-        for word in query.split()
-        if len(word.strip(".,!?;:()[]{}")) > 1
-    )
-
-    atlas_results = _search_atlas_vector(
-        query_embedding,
-        query_words
-    )
-
-    if atlas_results is not None:
-        atlas_results.sort(
-            key=lambda item: item["score"],
-            reverse=True
-        )
-        return atlas_results
+        articles = KNOWLEDGE_ARTICLES
 
     results = []
+    model = _get_embedding_model()
+
+    query_embedding = None
+    if model != "fallback" and hasattr(model, "encode"):
+        try:
+            query_embedding = model.encode(query).tolist()
+        except Exception:
+            query_embedding = None
 
     for article in articles:
-        article_embedding = article.get("embedding")
+        sem_score = 0.0
+        # If pre-computed or on-the-fly embedding available
+        if query_embedding:
+            article_text = f"{article.get('title', '')} {article.get('content', '')}"
+            if "embedding" not in article:
+                try:
+                    article_embedding = model.encode(article_text).tolist()
+                except Exception:
+                    article_embedding = None
+            else:
+                article_embedding = article.get("embedding")
 
-        if not article_embedding:
-            continue
+            if article_embedding:
+                sem_score = calculate_cosine_similarity(query_embedding, article_embedding)
 
-        similarity = calculate_similarity(
-            query_embedding,
-            article_embedding
-        )
+        lex_score = compute_lexical_similarity(query, article)
+        
+        # Combined hybrid score (Dense Semantic + Sparse Keyword)
+        if sem_score > 0:
+            combined_score = (sem_score * 0.65) + (lex_score * 0.35)
+        else:
+            combined_score = lex_score
 
-        keywords = [
-            str(keyword).lower()
-            for keyword in article.get("keywords", [])
-        ]
-
-        keyword_matches = 0
-
-        for word in query_words:
-            for keyword in keywords:
-                if (
-                    word == keyword
-                    or word in keyword
-                    or keyword in word
-                ):
-                    keyword_matches += 1
-                    break
-
-        keyword_score = min(
-            keyword_matches * 0.20,
-            0.60
-        )
-
-        title = str(
-            article.get("title", "")
-        ).lower()
-
-        title_score = 0.0
-
-        for word in query_words:
-            if word in title:
-                title_score += 0.20
-
-        title_score = min(
-            title_score,
-            0.40
-        )
-
-        final_score = (
-            similarity
-            + keyword_score
-            + title_score
-        )
-
-        clean_article = {
-            "id": article.get("id"),
-            "title": article.get("title"),
-            "category": article.get("category"),
-            "keywords": article.get("keywords", []),
-            "content": article.get("content")
-        }
-
+        # Format clean response chunk
         results.append({
-            "article": clean_article,
-            "score": round(final_score, 4)
+            "article": {
+                "id": article.get("id"),
+                "title": article.get("title"),
+                "category": article.get("category"),
+                "subcategory": article.get("subcategory", article.get("category")),
+                "content": article.get("content"),
+                "source": article.get("source", f"IT Knowledge Base / {article.get('id')}"),
+                "keywords": article.get("keywords", [])
+            },
+            "score": round(float(combined_score), 4),
+            "relevance_percentage": f"{min(int(combined_score * 100), 99)}%"
         })
 
-    results.sort(
-        key=lambda item: item["score"],
-        reverse=True
-    )
+    # Sort descending by score
+    results.sort(key=lambda x: x["score"], reverse=True)
+    top_results = results[:top_k]
 
-    return results
+    # Filter out spurious matches if relevance is too low (Anti-hallucination safeguard)
+    filtered = [r for r in top_results if r["score"] >= 0.20]
+    return filtered

@@ -1,150 +1,74 @@
-import { useEffect, useState } from "react";
-
-const API_URL = import.meta.env.VITE_API_URL;
+import { useEffect, useState, useRef } from "react";
+import { api } from "../services/api";
 
 const quickActions = [
-  { label: "🔑 Password Reset", value: "I need to reset my password" },
-  { label: "📶 Wi-Fi Help", value: "My laptop is connected to WiFi but I cannot access the internet" },
-  { label: "💻 Software Install", value: "I need Microsoft Teams installed on my laptop" },
+  { label: "🔑 Reset Password", value: "My password has expired." },
+  { label: "🌐 VPN Connectivity", value: "I cannot connect to VPN since this morning. Authentication keeps failing." },
+  { label: "📧 Outlook Sync", value: "How do I troubleshoot Outlook synchronization?" },
+  { label: "💻 Install VS Code", value: "I need Visual Studio Code installed on my laptop." },
+  { label: "📶 Office Wi-Fi", value: "My laptop cannot connect to the corporate Wi-Fi." },
 ];
 
 export default function Chatbot() {
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
       sender: "bot",
-      text: "Hello! I'm your AI IT Support Assistant. How can I help you today?",
+      text: "👋 Hello! I am your AI IT Helpdesk Assistant. Ask me any IT issue, request software, or choose a quick action below.",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
 
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const service = params.get("service");
+    scrollToBottom();
+  }, [messages, loading]);
 
-    if (service) {
-      setInput(service);
-      setOpen(true);
-    }
-  }, []);
+  const handleSendMessage = async (customMessage) => {
+    const message = (customMessage || input).trim();
+    if (!message || loading) return;
 
-  const sendMessage = async () => {
-    const message = input.trim();
+    // Add user message
+    const userMsg = {
+      sender: "user",
+      text: message,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
 
-    if (!message || loading) {
-      return;
-    }
-
-    setMessages((prev) => [
-      ...prev,
-      { sender: "user", text: message },
-    ]);
-
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
 
     try {
-      const chatResponse = await fetch(`${API_URL}/api/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
+      // 1. Send to AI Decision Engine
+      const chatData = await api.sendChatMessage(message);
 
-      const chatData = await chatResponse.json();
+      // 2. Automatically create ticket & synchronize with ServiceNow
+      const ticketRes = await api.createTicket(message);
+      const ticket = ticketRes.ticket;
 
-      if (!chatResponse.ok) {
-        throw new Error(chatData.detail || "AI chatbot request failed");
-      }
+      const botMsg = {
+        sender: "bot",
+        text: chatData.ai_response,
+        chatData: chatData,
+        ticket: ticket,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
 
-      const ticketResponse = await fetch(`${API_URL}/api/tickets`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
-      });
-
-      const ticketData = await ticketResponse.json();
-
-      if (!ticketResponse.ok) {
-        throw new Error(ticketData.detail || "Failed to create ticket");
-      }
-
-      const ticket = ticketData.ticket;
-
-      let botMessage = "✅ IT issue analyzed successfully.\n\n";
-
-      if (chatData.ai_response) {
-        botMessage += `🤖 AI Assistant: ${chatData.ai_response}\n`;
-        botMessage += `🧠 AI Engine: ${chatData.ai_model}\n`;
-      }
-
-      botMessage += `🎫 Ticket ID: ${ticket.ticket_id}\n`;
-      botMessage += `📌 Status: ${ticket.status}\n`;
-      botMessage += `📂 Category: ${ticket.category}\n`;
-      botMessage += `🔎 Issue: ${ticket.subcategory}\n`;
-      botMessage += `⚡ Priority: ${ticket.priority}\n`;
-      botMessage += `🚨 Urgency: ${ticket.urgency}\n`;
-      botMessage += `👨‍💻 Assigned to: ${ticket.assignment_group}\n`;
-      botMessage += `\n💡 Suggested Action: ${ticket.suggested_action}`;
-
-      if (chatData.knowledge_base) {
-        const topResult = chatData.knowledge_base;
-        const article = topResult.article;
-
-        botMessage += "\n\n📚 Knowledge Base";
-        botMessage += `\n📖 Article: ${article.title}`;
-        botMessage += `\n📊 Relevance Score: ${topResult.score}`;
-        botMessage += `\n💡 Solution: ${article.content}`;
-      }
-
-      if (ticket.automation) {
-        botMessage += "\n\n🤖 Automation";
-        botMessage += `\n✅ Status: ${ticket.automation.status}`;
-        botMessage += `\n🔧 Action: ${ticket.automation.action}`;
-
-        if (ticket.automation.software_name) {
-          botMessage += `\n💻 Software: ${ticket.automation.software_name}`;
-        }
-
-        if (ticket.automation.request_id) {
-          botMessage += `\n🆔 Provisioning Request: ${ticket.automation.request_id}`;
-        }
-
-        if (ticket.automation.catalog_status) {
-          botMessage += `\n📦 Catalogue: ${ticket.automation.catalog_status}`;
-        }
-
-        if (ticket.automation.workflow) {
-          botMessage += `\n🔄 Workflow: ${ticket.automation.workflow.join(" → ")}`;
-        }
-
-        botMessage += `\n📝 ${ticket.automation.message}`;
-
-        if (ticket.automation.note) {
-          botMessage += `\nℹ️ ${ticket.automation.note}`;
-        }
-      }
-
-      if (ticket.servicenow) {
-        botMessage += "\n\n🎫 ServiceNow Integration";
-        botMessage += `\n✅ Status: ${ticket.servicenow.status}`;
-        botMessage += `\n📌 Incident: ${ticket.servicenow.incident_number}`;
-        botMessage += `\n📝 ${ticket.servicenow.message}`;
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        { sender: "bot", text: botMessage },
-      ]);
-    } catch (error) {
-      console.error("Chatbot error:", error);
-
+      setMessages((prev) => [...prev, botMsg]);
+    } catch (err) {
       setMessages((prev) => [
         ...prev,
         {
           sender: "bot",
-          text: `❌ Unable to process your request.\n\n${error.message}`,
+          text: `⚠️ Request Error: ${err.message || "Failed to communicate with helpdesk backend"}.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
     } finally {
@@ -152,312 +76,210 @@ export default function Chatbot() {
     }
   };
 
-  const handleKeyDown = (event) => {
-    if (event.key === "Enter") {
-      sendMessage();
-    }
-  };
-
-  const chooseQuickAction = (value) => {
-    setInput(value);
-  };
-
   return (
-    <>
-      {open && (
-        <div
-          style={{
-            position: "fixed",
-            right: "24px",
-            bottom: "92px",
-            width: "min(390px, calc(100vw - 32px))",
-            height: "min(620px, calc(100vh - 120px))",
-            minHeight: "460px",
-            display: "flex",
-            flexDirection: "column",
-            background: "#ffffff",
-            border: "1px solid #d9def0",
-            borderRadius: "18px",
-            overflow: "hidden",
-            boxShadow: "0 20px 60px rgba(31, 41, 95, 0.25)",
-            zIndex: 9999,
-            fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-          }}
-        >
-          <div
-            style={{
-              padding: "16px 18px",
-              background: "linear-gradient(135deg, #11183f 0%, #1e2454 100%)",
-              color: "#ffffff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <div
-                style={{
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "12px",
-                  background: "linear-gradient(135deg, #4f7cff, #8b5cf6)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "21px",
-                  boxShadow: "0 6px 18px rgba(79,124,255,.35)",
-                }}
-              >
-                🤖
-              </div>
-              <div>
-                <div style={{ fontSize: "15px", fontWeight: 750 }}>
-                  AI IT Support Assistant
-                  <span style={{ color: "#22c55e", marginLeft: "7px" }}>●</span>
-                </div>
-                <div style={{ fontSize: "11px", color: "#cbd5ff", marginTop: "3px" }}>
-                  Powered by AI & ITSM Engine
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <button
-                type="button"
-                onClick={() =>
-                  setMessages((prev) => [
-                    ...prev,
-                    {
-                      sender: "bot",
-                      text: "👨‍💻 Human-agent handoff is available as a prototype option. Please include your issue details and the support team can review the ticket.",
-                    },
-                  ])
-                }
-                style={{
-                  border: "1px solid rgba(255,255,255,.25)",
-                  background: "rgba(255,255,255,.08)",
-                  color: "#e5e7ff",
-                  borderRadius: "8px",
-                  padding: "7px 9px",
-                  fontSize: "10px",
-                  cursor: "pointer",
-                }}
-              >
-                ↗ Human Agent
-              </button>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close AI chat"
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#dbe2ff",
-                  fontSize: "20px",
-                  cursor: "pointer",
-                  padding: "2px 5px",
-                }}
-              >
-                ×
-              </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              flex: 1,
-              padding: "18px",
-              overflowY: "auto",
-              background: "#f8f9fd",
-            }}
-          >
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                style={{
-                  display: "flex",
-                  justifyContent: msg.sender === "user" ? "flex-end" : "flex-start",
-                  marginBottom: "14px",
-                  gap: "8px",
-                }}
-              >
-                {msg.sender === "bot" && (
-                  <div
-                    style={{
-                      width: "28px",
-                      height: "28px",
-                      flex: "0 0 28px",
-                      borderRadius: "50%",
-                      background: "#3b82f6",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "14px",
-                    }}
-                  >
-                    🤖
-                  </div>
-                )}
-                <div
-                  style={{
-                    maxWidth: "82%",
-                    padding: "12px 14px",
-                    borderRadius:
-                      msg.sender === "user"
-                        ? "15px 15px 4px 15px"
-                        : "4px 15px 15px 15px",
-                    whiteSpace: "pre-line",
-                    background: msg.sender === "user" ? "#4f46e5" : "#ffffff",
-                    color: msg.sender === "user" ? "#ffffff" : "#26314d",
-                    border: msg.sender === "user" ? "none" : "1px solid #e3e7f2",
-                    boxShadow:
-                      msg.sender === "user"
-                        ? "0 5px 15px rgba(79,70,229,.18)"
-                        : "0 3px 12px rgba(31,41,95,.06)",
-                    fontSize: "13px",
-                    lineHeight: 1.55,
-                  }}
-                >
-                  {msg.text}
-                </div>
-              </div>
-            ))}
-
-            {loading && (
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", color: "#667085", fontSize: "13px" }}>
-                <div
-                  style={{
-                    width: "28px",
-                    height: "28px",
-                    borderRadius: "50%",
-                    background: "#3b82f6",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  🤖
-                </div>
-                Analyzing your IT issue...
-              </div>
-            )}
-          </div>
-
-          <div
-            style={{
-              padding: "10px 12px 8px",
-              borderTop: "1px solid #e5e7ef",
-              background: "#ffffff",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                gap: "7px",
-                overflowX: "auto",
-                paddingBottom: "9px",
-              }}
-            >
-              {quickActions.map((action) => (
-                <button
-                  key={action.label}
-                  type="button"
-                  onClick={() => chooseQuickAction(action.value)}
-                  style={{
-                    whiteSpace: "nowrap",
-                    border: "1px solid #e0e5f2",
-                    background: "#f8f9fd",
-                    color: "#526078",
-                    borderRadius: "999px",
-                    padding: "7px 10px",
-                    fontSize: "10px",
-                    cursor: "pointer",
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe your IT issue..."
-                disabled={loading}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  padding: "12px 13px",
-                  border: "1px solid #dfe4ef",
-                  borderRadius: "12px",
-                  outline: "none",
-                  fontSize: "13px",
-                  color: "#26314d",
-                  background: "#ffffff",
-                }}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                aria-label="Send message"
-                style={{
-                  width: "44px",
-                  height: "44px",
-                  border: "none",
-                  borderRadius: "12px",
-                  background: loading || !input.trim() ? "#c7bff8" : "#8b7cf6",
-                  color: "white",
-                  cursor: loading || !input.trim() ? "not-allowed" : "pointer",
-                  fontSize: "19px",
-                }}
-              >
-                {loading ? "…" : "➤"}
-              </button>
-            </div>
+    <div style={{
+      background: "#ffffff",
+      borderRadius: "16px",
+      border: "1px solid #e2e8f0",
+      boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.08)",
+      display: "flex",
+      flexDirection: "column",
+      height: "calc(100vh - 120px)",
+      maxHeight: "800px",
+      overflow: "hidden",
+    }}>
+      {/* Header */}
+      <div style={{
+        background: "#0f172a",
+        color: "#ffffff",
+        padding: "16px 20px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{
+            width: "10px",
+            height: "10px",
+            borderRadius: "50%",
+            backgroundColor: "#22c55e",
+            boxShadow: "0 0 8px #22c55e",
+          }} />
+          <div>
+            <div style={{ fontWeight: "700", fontSize: "14px" }}>IT Support AI Agent</div>
+            <div style={{ fontSize: "11px", color: "#94a3b8" }}>RAG + Self-Healing Active</div>
           </div>
         </div>
-      )}
+        <span style={{ fontSize: "11px", background: "#1e293b", color: "#38bdf8", padding: "3px 8px", borderRadius: "12px", fontWeight: "600" }}>
+          ServiceNow Connected
+        </span>
+      </div>
 
-      {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
+      {/* Messages Scroll Area */}
+      <div style={{
+        flex: 1,
+        overflowY: "auto",
+        padding: "16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "14px",
+        backgroundColor: "#f8fafc",
+      }}>
+        {messages.map((m, idx) => {
+          const isBot = m.sender === "bot";
+          return (
+            <div
+              key={idx}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: isBot ? "flex-start" : "flex-end",
+              }}
+            >
+              <div
+                style={{
+                  maxWidth: "92%",
+                  padding: "12px 16px",
+                  borderRadius: isBot ? "14px 14px 14px 2px" : "14px 14px 2px 14px",
+                  backgroundColor: isBot ? "#ffffff" : "#2563eb",
+                  color: isBot ? "#1e293b" : "#ffffff",
+                  fontSize: "13px",
+                  lineHeight: "1.5",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                  border: isBot ? "1px solid #e2e8f0" : "none",
+                  whiteSpace: "pre-line",
+                }}
+              >
+                {m.text}
+
+                {/* Structured Ticket & Action Card */}
+                {isBot && m.ticket && (
+                  <div style={{
+                    marginTop: "10px",
+                    paddingTop: "10px",
+                    borderTop: "1px solid #e2e8f0",
+                    fontSize: "11px",
+                    color: "#475569",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                      <strong>🎫 Ticket: {m.ticket.ticket_id}</strong>
+                      <span style={{
+                        padding: "1px 6px",
+                        borderRadius: "8px",
+                        fontWeight: "700",
+                        background: m.ticket.status === "Resolved" ? "#dcfce7" : "#e0e7ff",
+                        color: m.ticket.status === "Resolved" ? "#166534" : "#3730a3",
+                      }}>
+                        {m.ticket.status}
+                      </span>
+                    </div>
+
+                    <div>Category: <strong>{m.ticket.category} / {m.ticket.subcategory}</strong></div>
+                    <div>Priority: <strong>{m.ticket.priority}</strong> | Group: <strong>{m.ticket.assignment_group}</strong></div>
+
+                    {m.ticket.servicenow_incident && (
+                      <div style={{ marginTop: "4px", color: "#0369a1", fontWeight: "600" }}>
+                        🔗 ServiceNow: {m.ticket.servicenow_incident} ({m.ticket.servicenow_status || "Created"})
+                      </div>
+                    )}
+
+                    {m.ticket.automation_status && (
+                      <div style={{ marginTop: "4px", color: "#166534", fontWeight: "700" }}>
+                        ⚡ Self-Healing: {m.ticket.automation_action || "Automation"} executed successfully
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <span style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", marginInline: "4px" }}>
+                {m.timestamp}
+              </span>
+            </div>
+          );
+        })}
+
+        {loading && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#64748b", fontSize: "12px" }}>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#3b82f6" }} />
+            AI Agent is analyzing, searching knowledge & syncing ServiceNow...
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Quick Action Suggestions */}
+      <div style={{
+        padding: "10px 14px",
+        background: "#ffffff",
+        borderTop: "1px solid #e2e8f0",
+        display: "flex",
+        gap: "6px",
+        overflowX: "auto",
+        whiteSpace: "nowrap",
+      }}>
+        {quickActions.map((qa, i) => (
+          <button
+            key={i}
+            onClick={() => handleSendMessage(qa.value)}
+            disabled={loading}
+            style={{
+              padding: "5px 10px",
+              borderRadius: "14px",
+              border: "1px solid #cbd5e1",
+              background: "#f8fafc",
+              color: "#334155",
+              fontSize: "11px",
+              cursor: "pointer",
+              fontWeight: "600",
+              flexShrink: 0,
+            }}
+          >
+            {qa.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Input Field */}
+      <div style={{
+        padding: "14px 16px",
+        background: "#ffffff",
+        borderTop: "1px solid #e2e8f0",
+        display: "flex",
+        gap: "8px",
+      }}>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+          placeholder="Ask IT question or report issue..."
+          disabled={loading}
           style={{
-            position: "fixed",
-            right: "24px",
-            bottom: "24px",
-            border: "none",
-            borderRadius: "999px",
-            padding: "14px 20px",
-            background: "linear-gradient(135deg, #3158ff 0%, #5b4cf0 100%)",
+            flex: 1,
+            padding: "10px 14px",
+            borderRadius: "8px",
+            border: "1px solid #cbd5e1",
+            fontSize: "13px",
+            outline: "none",
+          }}
+        />
+        <button
+          onClick={() => handleSendMessage()}
+          disabled={loading || !input.trim()}
+          style={{
+            padding: "10px 16px",
+            backgroundColor: loading || !input.trim() ? "#94a3b8" : "#2563eb",
             color: "#ffffff",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            fontSize: "14px",
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: "0 12px 30px rgba(61,75,230,.35)",
-            zIndex: 9999,
+            border: "none",
+            borderRadius: "8px",
+            fontWeight: "700",
+            cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+            fontSize: "13px",
           }}
         >
-          <span style={{ fontSize: "19px" }}>🤖</span>
-          Need Help? Chat with AI
-          <span
-            style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: "#22c55e",
-              marginLeft: "2px",
-              boxShadow: "0 0 0 3px rgba(34,197,94,.16)",
-            }}
-          />
+          Send
         </button>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
