@@ -156,6 +156,10 @@ def _get_chroma_collection():
     import chromadb
 
     persist_path = Path(settings.CHROMA_PERSIST_DIRECTORY).expanduser()
+    if not persist_path.is_absolute():
+        # Treat relative paths as backend-relative no matter which directory
+        # the developer used to launch uvicorn.
+        persist_path = Path(__file__).resolve().parents[2] / persist_path
     persist_path.mkdir(parents=True, exist_ok=True)
     _chroma_client = chromadb.PersistentClient(path=str(persist_path))
     _chroma_collection = _chroma_client.get_or_create_collection(
