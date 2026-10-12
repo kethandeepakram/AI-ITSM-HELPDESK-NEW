@@ -257,7 +257,7 @@ def analyze_ticket(message: str) -> dict:
             )
             resp = client.text_generation(
                 prompt=prompt,
-                model="meta-llama/Llama-3.2-3B-Instruct",
+                model=settings.HF_LLM_MODEL,
                 max_new_tokens=250,
                 temperature=0.1
             )
@@ -265,9 +265,17 @@ def analyze_ticket(message: str) -> dict:
             json_match = re.search(r"\{.*\}", resp, re.DOTALL)
             if json_match:
                 parsed = json.loads(json_match.group(0))
-                # Allow the model to refine only user-facing text and confidence.
-                # Classification and automation eligibility remain rule-based.
-                for key in ("summary", "suggested_resolution", "confidence_score"):
+                # Keep the deterministic rules authoritative whenever they
+                # recognized a specific workflow. For generic IT messages only,
+                # allow the model to suggest a classification; never accept model
+                # instructions to trigger automation.
+                allowed_fields = ["summary", "suggested_resolution", "confidence_score"]
+                if base.get("category") == "General IT":
+                    allowed_fields.extend([
+                        "intent", "category", "subcategory", "priority",
+                        "impact", "urgency", "assignment_group"
+                    ])
+                for key in allowed_fields:
                     value = parsed.get(key)
                     if value is not None:
                         base[key] = value
@@ -282,10 +290,13 @@ def analyze_ticket(message: str) -> dict:
                 base["should_escalate"] = bool(
                     base.get("should_escalate", False)
                     or model_confidence < settings.CONFIDENCE_THRESHOLD
+                    or base.get("priority") == "P1"
+                    or base.get("category") == "Out of Scope"
                 )
                 if base["should_escalate"]:
                     base["automation_possible"] = False
                     base["automation_action"] = None
+                    base["software_name"] = None
                 return base
         except Exception as e:
             logger.info(f"Hugging Face Inference call skipped or fell back ({e})")
