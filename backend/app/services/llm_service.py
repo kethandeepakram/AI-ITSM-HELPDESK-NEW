@@ -223,10 +223,10 @@ def generate_ai_response(
     if must_escalate or not has_kb:
         if is_critical:
             grounded_text = (
-                "🚨 Critical production incident detected. This request requires "
-                "immediate human infrastructure support. Automated remediation is "
-                "disabled for this incident; follow the organization's incident "
-                "response process and keep affected stakeholders informed."
+                "🚨 Critical incident detected. This request requires immediate human "
+                "infrastructure support. Automated remediation is disabled for this "
+                "incident; follow the organization's major-incident response process "
+                "and keep affected stakeholders informed."
             )
         elif is_out_of_scope:
             grounded_text = (
