@@ -16,16 +16,47 @@ def generate_ai_response(
     - Clear source attribution
     """
     article = knowledge_base.get("article", {}) if knowledge_base else {}
-    has_kb = bool(article and article.get("content"))
-    is_out_of_scope = analysis.get("category") == "Out of Scope" or analysis.get("should_escalate") and not has_kb
+    try:
+        retrieval_score = float(knowledge_base.get("score", 0.0)) if knowledge_base else 0.0
+    except (TypeError, ValueError):
+        retrieval_score = 0.0
+    has_kb = bool(article and article.get("content") and retrieval_score >= 0.22)
 
-    # Anti-hallucination check: If no relevant KB is found for an inquiry
-    if not has_kb or is_out_of_scope:
-        grounded_text = (
-            "⚠️ Information Unavailable in Approved Knowledge Base.\n\n"
-            "Our AI Governance policies prevent generating unverified guidance for requests outside verified enterprise documentation. "
-            "This inquiry has been flagged for human IT support escalation. A ticket can be created in ServiceNow for manual review."
-        )
+    is_critical = (
+        analysis.get("priority") == "P1"
+        or analysis.get("impact") == "Multiple Users"
+    )
+    is_out_of_scope = analysis.get("category") == "Out of Scope"
+    must_escalate = bool(analysis.get("should_escalate")) or is_critical or is_out_of_scope
+
+    # Escalation and critical-incident policy takes precedence over retrieved
+    # text. Never answer a P1 incident using an unrelated KB article.
+    if must_escalate or not has_kb:
+        if is_critical:
+            grounded_text = (
+                "🚨 Critical production incident detected. This request requires "
+                "immediate human infrastructure support. Automated remediation is "
+                "disabled for this incident; follow the organization's incident "
+                "response process and keep affected stakeholders informed."
+            )
+        elif is_out_of_scope:
+            grounded_text = (
+                "⚠️ This request is outside the supported IT helpdesk scope. "
+                "The approved knowledge base will not be used to invent an answer. "
+                "Please contact the appropriate service desk for assistance."
+            )
+        elif must_escalate:
+            grounded_text = (
+                "⚠️ This request requires human IT support review. Automated "
+                "instructions and self-healing have been withheld because the "
+                "request is marked for escalation."
+            )
+        else:
+            grounded_text = (
+                "⚠️ No sufficiently relevant article was found in the approved "
+                "knowledge base. To avoid providing unrelated troubleshooting steps, "
+                "please contact the IT Service Desk for manual assistance."
+            )
         return {
             "text": grounded_text,
             "grounded": False,
