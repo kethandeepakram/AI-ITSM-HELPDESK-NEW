@@ -2,8 +2,8 @@ import os
 import re
 import json
 import logging
-import requests
 from app.config import settings
+from app.services.llm_service import generate_llm_text
 
 logger = logging.getLogger(__name__)
 
@@ -214,97 +214,66 @@ def _rule_based_classification(message: str) -> dict:
         "should_escalate": should_escalate or (confidence_score < settings.CONFIDENCE_THRESHOLD)
     }
 
-def _ollama_classification(message: str) -> dict | None:
-    """Optional local LLM refinement; deterministic workflow fields remain authoritative."""
-    prompt = (
-        "You are an enterprise IT helpdesk assistant. Return valid JSON with keys "
-        "summary, suggested_resolution, confidence_score. Do not trigger automation. "
-        "Keep the answer concise and grounded in the employee's text.\n"
-        f"Employee request: {message}\nJSON:"
-    )
-    try:
-        response = requests.post(
-            f"{settings.OLLAMA_BASE_URL}/api/generate",
-            json={
-                "model": settings.OLLAMA_LLM_MODEL,
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.1, "num_predict": 250},
-            },
-            timeout=settings.OLLAMA_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        data = response.json()
-        raw = data.get("response", "")
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        return json.loads(match.group(0)) if match else None
-    except (requests.RequestException, ValueError, TypeError) as exc:
-        logger.info("Ollama classification unavailable; keeping rule-based output: %s", exc)
-        return None
-
-
 def analyze_ticket(message: str) -> dict:
-    """Analyze a request while keeping deterministic safety rules authoritative."""
+    """Classify deterministically, then optionally refine safe text fields with the configured HF model."""
     base = _rule_based_classification(message)
 
-    # Critical incidents and mandatory escalations never pass through an LLM.
+    # P1 incidents and mandatory escalations never go through an LLM.
     if base.get("priority") == "P1" or base.get("should_escalate"):
         return base
 
-    parsed = None
-    if settings.LLM_PROVIDER == "ollama":
-        parsed = _ollama_classification(message)
-    elif settings.LLM_PROVIDER == "huggingface" and settings.HF_TOKEN:
-        try:
-            from huggingface_hub import InferenceClient
-            client = InferenceClient(api_key=settings.HF_TOKEN)
-            prompt = (
-                "You are an enterprise IT Helpdesk classifier. Analyze the following employee request and respond in valid JSON only with keys:\n"
-                "intent, category, subcategory, priority (P1, P2, P3, P4), impact, urgency, assignment_group, summary, suggested_resolution, automation_possible (boolean), confidence_score (float between 0 and 1).\n\n"
-                f"Employee Request: \"{message}\"\n\nJSON:"
-            )
-            resp = client.text_generation(
-                prompt=prompt,
-                model=settings.HF_LLM_MODEL,
-                max_new_tokens=250,
-                temperature=0.1
-            )
-            json_match = re.search(r"\{.*\}", resp, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group(0))
-        except Exception as exc:
-            logger.info("Hugging Face inference unavailable; keeping rule-based output: %s", exc)
+    if settings.LLM_PROVIDER in {"transformers", "huggingface_api"}:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an enterprise IT helpdesk classifier. Return valid JSON only "
+                    "with keys summary, suggested_resolution, confidence_score. Do not invent "
+                    "company policies and never choose or enable automation actions. Use the "
+                    "employee's description and keep the output concise."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Employee request: {message}\nReturn the JSON now.",
+            },
+        ]
+        raw = generate_llm_text(messages, max_new_tokens=180, temperature=0.1)
+        parsed = None
+        if raw:
+            try:
+                json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group(0))
+            except (json.JSONDecodeError, TypeError):
+                logger.info(
+                    "Hugging Face classification output was not valid JSON; keeping rule-based result."
+                )
 
-    if parsed:
-        # Deterministic rules remain authoritative. The LLM can refine just
-        # wording and confidence, and may only refine broad General IT labels.
-        allowed_fields = ["summary", "suggested_resolution", "confidence_score"]
-        if base.get("category") == "General IT":
-            allowed_fields.extend([
-                "intent", "category", "subcategory", "priority",
-                "impact", "urgency", "assignment_group"
-            ])
-        for key in allowed_fields:
-            value = parsed.get(key)
-            if value is not None:
-                base[key] = value
+        if parsed:
+            # Workflow fields stay deterministic; the model may refine summary,
+            # suggested resolution, and confidence only.
+            for key in ("summary", "suggested_resolution", "confidence_score"):
+                value = parsed.get(key)
+                if value is not None:
+                    base[key] = value
 
-        base["suggested_action"] = base.get("suggested_resolution")
-        try:
-            model_confidence = float(base.get("confidence_score", 0.9))
-        except (TypeError, ValueError):
-            model_confidence = 0.9
-        model_confidence = min(max(model_confidence, 0.0), 1.0)
-        base["confidence_score"] = round(model_confidence, 2)
-        base["should_escalate"] = bool(
-            base.get("should_escalate", False)
-            or model_confidence < settings.CONFIDENCE_THRESHOLD
-            or base.get("priority") == "P1"
-            or base.get("category") == "Out of Scope"
-        )
-        if base["should_escalate"]:
-            base["automation_possible"] = False
-            base["automation_action"] = None
-            base["software_name"] = None
+            base["suggested_action"] = base.get("suggested_resolution")
+            try:
+                model_confidence = float(base.get("confidence_score", 0.9))
+            except (TypeError, ValueError):
+                model_confidence = 0.9
+            model_confidence = min(max(model_confidence, 0.0), 1.0)
+            base["confidence_score"] = round(model_confidence, 2)
+            base["should_escalate"] = bool(
+                base.get("should_escalate", False)
+                or model_confidence < settings.CONFIDENCE_THRESHOLD
+                or base.get("priority") == "P1"
+                or base.get("category") == "Out of Scope"
+            )
+            if base["should_escalate"]:
+                base["automation_possible"] = False
+                base["automation_action"] = None
+                base["software_name"] = None
+
     return base
