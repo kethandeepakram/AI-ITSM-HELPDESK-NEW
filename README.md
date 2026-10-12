@@ -23,7 +23,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Ollama local LLM (default), optional Hugging Face Inference, sentence-transformers embeddings, rule-based classification, lexical-overlap fallback |
+| AI / NLP | Hugging Face Qwen2.5-1.5B-Instruct run locally through Transformers, sentence-transformers embeddings, rule-based classification, lexical-overlap fallback; optional hosted Hugging Face API |
 | Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
@@ -53,7 +53,7 @@ sentence-transformers embeddings
                  |
   Retrieved chunks + source attribution
                  |
- Ollama local generation or grounded fallback
+ Hugging Face Transformers local generation or grounded fallback
                  |
       MongoDB Atlas / local fallback
 ```
@@ -91,7 +91,7 @@ The exact files may evolve as the project is developed.
 - Node.js 18 or later and npm
 - Git
 
-MongoDB Atlas and Hugging Face inference are optional. For Option B, install Ollama locally and use the grounded knowledge fallback if Ollama is unavailable.
+MongoDB Atlas and hosted Hugging Face inference are optional for local exploration. The default LLM path downloads the public Qwen2.5-1.5B-Instruct model from Hugging Face and runs it locally through Transformers, so it does not consume hosted inference credits. The model weights require several GB of disk space and sufficient RAM; the first model load can take time.
 
 ## Run locally
 
@@ -102,19 +102,11 @@ git clone https://github.com/kethandeepakram/AI-ITSM-HELPDESK-NEW.git
 cd AI-ITSM-HELPDESK-NEW
 ```
 
-### 2. Install Ollama for local inference (Option B)
+### 2. Select the free Hugging Face model (local inference)
 
-Install Ollama for your operating system from the official download page:
-https://ollama.com/download
+The default is [Qwen/Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct), a public Apache-2.0 model. Transformers downloads the weights into the local Hugging Face cache at first use. This runs on your computer and does not call Hugging Face Inference Providers or spend hosted inference credits. An HF token is not needed for this public model.
 
-Download the configured local model:
-
-```powershell
-ollama pull qwen2.5:3b
-ollama list
-```
-
-Ollama must be running locally for live local-model responses. This does not require Hugging Face inference credits.
+This model is much smaller than larger LLMs, but still needs several GB of disk and system memory, and CPU generation may be slow. If your computer cannot load it, the app keeps the grounded knowledge-base fallback.
 
 ### 3. Configure the backend
 
@@ -131,12 +123,10 @@ Open `backend/.env` and set the values needed by your configuration. For example
 ```dotenv
 MONGODB_URI=
 MONGODB_DATABASE=itsm_helpdesk
-LLM_PROVIDER=ollama
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_LLM_MODEL=qwen2.5:3b
-OLLAMA_TIMEOUT_SECONDS=45
+LLM_PROVIDER=transformers
 HF_TOKEN=
-HF_LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
+HF_LLM_MODEL=Qwen/Qwen2.5-1.5B-Instruct
+HF_MAX_NEW_TOKENS=220
 HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 CHROMA_PERSIST_DIRECTORY=chroma_data
 CHROMA_COLLECTION_NAME=itsm_knowledge_chunks
@@ -179,7 +169,7 @@ Make sure the frontend API base URL in `frontend/src/services/api.js` matches th
 From the repository root, review the test script's prerequisites and then run:
 
 ```powershell
-python test_scenarios.py
+python -m pytest -q test_scenarios.py
 ```
 
 The test script may require the backend to be running. Review its output and the application's actual responses; this README does not claim tests have been run in every environment.
@@ -205,7 +195,7 @@ Expected behavior depends on the configured rules and external integrations. Cri
 ## Known limitations
 
 - RAG splits knowledge articles into overlapping word chunks, embeds chunks with the configured sentence-transformers model, and stores/retrieves vectors with ChromaDB. If the embedding model or Chroma is unavailable, retrieval falls back to lexical-overlap scoring. The fallback is not vector search.
-- Ollama inference runs on the machine hosting Ollama. A deployed backend such as Render cannot reach Ollama running only on your own laptop; configure a reachable Ollama service or use the grounded fallback.
+- Local Hugging Face Transformers inference runs on the machine hosting the backend. A deployed backend such as Render cannot use a model cached only on your own laptop; configure a suitable host/runtime or use the grounded fallback.
 - ServiceNow and self-healing behaviors may use mock implementations depending on configuration.
 - The local in-memory database fallback is not durable across process restarts.
 - The prototype is not a production-ready ITSM replacement.
