@@ -23,7 +23,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Hugging Face Inference API (optional), sentence-transformers embeddings, rule-based classification, lexical-overlap fallback |
+| AI / NLP | Optional local Ollama LLM (default), optional Hugging Face Inference, sentence-transformers embeddings, rule-based classification and lexical fallback |
 | Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
@@ -53,7 +53,7 @@ sentence-transformers embeddings
                  |
   Retrieved chunks + source attribution
                  |
-      Grounded response / escalation
+ Ollama local generation or grounded fallback
                  |
       MongoDB Atlas / local fallback
 ```
@@ -69,7 +69,6 @@ sentence-transformers embeddings
 │   │   ├── routes/
 │   │   └── services/
 │   ├── knowledge_base.py
-│   ├── seed_knowledge.py
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
@@ -77,56 +76,55 @@ sentence-transformers embeddings
 │   ├── package.json
 │   ├── package-lock.json
 │   └── vite.config.js
-├── test_scenarios.py
-├── .env.example
-├── .gitignore
-└── README.md
+└── test_scenarios.py
 ```
-
-The exact files may evolve as the project is developed.
-
-## Prerequisites
-
-- Python 3.10 or later
-- Node.js 18 or later and npm
-- Git
-
-MongoDB Atlas and a Hugging Face token are optional for basic local exploration if the fallback modes remain enabled in your configuration.
 
 ## Run locally
 
 ### 1. Clone the repository
 
-```bash
+```powershell
 git clone https://github.com/kethandeepakram/AI-ITSM-HELPDESK-NEW.git
 cd AI-ITSM-HELPDESK-NEW
 ```
 
-### 2. Configure the backend
+### 2. Install Ollama for local inference (Option B)
 
-Create a local environment file by copying the template. On Windows PowerShell:
+Install Ollama for your operating system from the official download page:
+https://ollama.com/download
+
+Then open a terminal and download a model. The configured default is:
+
+```powershell
+ollama pull qwen2.5:3b
+```
+
+Ollama should be running locally. Confirm the model is available with:
+
+```powershell
+ollama list
+```
+
+No Hugging Face inference token is required when `LLM_PROVIDER=ollama`. The RAG embeddings remain separate from text generation; sentence-transformers/Chroma may still download the configured embedding model on the first run.
+
+### 3. Configure backend
+
+From the repository root, create a local environment file:
 
 ```powershell
 Copy-Item backend/.env.example backend/.env
 ```
 
-If your project uses the root-level template instead, copy that template and adapt the destination to the variables expected by `backend/app/config.py`.
-
-Open `backend/.env` and set the values needed by your configuration. For example:
+Leave `HF_TOKEN=` empty and confirm these settings are present:
 
 ```dotenv
-MONGODB_URI=
-MONGODB_DATABASE=itsm_helpdesk
-HF_TOKEN=
-HF_LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
-HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-CHROMA_PERSIST_DIRECTORY=chroma_data
-CHROMA_COLLECTION_NAME=itsm_knowledge_chunks
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_LLM_MODEL=qwen2.5:3b
+OLLAMA_TIMEOUT_SECONDS=45
 ```
 
-Use the variable names required by your local configuration. Leave optional integrations blank when you want to use fallback mode. **Never commit your real `.env` file, credentials, or API tokens.** Set `CORS_ORIGINS` to the exact frontend origin(s), comma-separated, when running the frontend from a deployed URL; the template defaults only cover local Vite development.
-
-Install backend dependencies and start FastAPI:
+Install dependencies and start FastAPI:
 
 ```powershell
 cd backend
@@ -134,17 +132,16 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Useful local endpoints:
-
+Useful endpoints:
 - API root: http://localhost:8000/
 - Health check: http://localhost:8000/health
-- Interactive API docs: http://localhost:8000/docs
+- Swagger UI: http://localhost:8000/docs
 
-Keep this terminal running.
+If Ollama is unavailable or the model is not installed, the app automatically uses its existing knowledge-base response fallback.
 
-### 3. Start the frontend
+### 4. Start the frontend
 
-Open a second terminal at the repository root:
+Open another terminal at repository root:
 
 ```powershell
 cd frontend
@@ -154,19 +151,17 @@ npm run dev
 
 Open the local URL printed by Vite (usually http://localhost:5173).
 
-Make sure the frontend API base URL in `frontend/src/services/api.js` matches the backend URL used locally or in your deployment.
+### 5. Run regression tests
 
-### 4. Run scenario tests
-
-From the repository root, review the test script's prerequisites and then run:
+From the repository root:
 
 ```powershell
-python test_scenarios.py
+python -m pytest -q test_scenarios.py
 ```
 
-The test script may require the backend to be running. Review its output and the application's actual responses; this README does not claim tests have been run in every environment.
+Review actual test output before treating tests as passed. The test suite contains an existing Hugging Face-specific mocked test; update its provider setting to `LLM_PROVIDER=huggingface` if you need to explicitly verify that optional hosted path.
 
-## Example scenarios to try
+## Example scenarios
 
 1. **VPN support:** “I cannot connect to the company VPN.”
 2. **Password assistance:** “I forgot my password and need to reset it.”
@@ -174,34 +169,26 @@ The test script may require the backend to be running. Review its output and the
 4. **Critical incident:** “The production server is down and multiple employees cannot access the application.”
 5. **Knowledge search:** “How do I troubleshoot Outlook synchronization?”
 
-Expected behavior depends on the configured rules and external integrations. Critical production incidents should be escalated rather than automatically remediated by an unrelated action. Automation displayed by the prototype may be simulated and should not be interpreted as confirmation that a real corporate system was changed.
+Critical incidents and low-relevance knowledge matches should trigger the safety policy, not LLM-generated fixes. Automation displayed by the prototype may be simulated and should not be interpreted as confirmation that a real corporate system was changed.
 
 ## Security and operational notes
 
-- Do not upload `.env` files or secrets to GitHub.
-- Use `.env.example` only for placeholder values.
-- Restrict CORS, add authentication and authorization, validate inputs, and protect administrative endpoints before any internet-facing deployment.
-- Treat account/password reset, service restart, and provisioning routines as demonstrations unless connected to and validated against authorized systems.
-- Use persistent storage and audit retention policies appropriate to your environment if adapting the prototype for real use.
+- Never commit a real `.env` file, credentials, or inference tokens.
+- Keep CORS restricted to the frontend origins you use.
+- Add authentication and authorization and protect administrative endpoints before any internet-facing deployment.
+- Treat account/password reset and provisioning routines as demonstrations unless connected to and validated against authorized systems.
+- The prototype is not a production-ready ITSM replacement.
 
 ## Known limitations
 
-- RAG splits knowledge articles into overlapping word chunks, embeds chunks with the configured sentence-transformers model, and stores/retrieves vectors with ChromaDB. If the embedding model or Chroma is unavailable, retrieval falls back to lexical-overlap scoring. The fallback is not vector search.
+- RAG uses embeddings/ChromaDB when available and lexical-overlap retrieval when they are not. Lexical retrieval is not vector search.
+- Ollama performs inference on the computer where its service runs; a hosted Render backend cannot reach your personal computer's `localhost`.
 - ServiceNow and self-healing behaviors may use mock implementations depending on configuration.
 - The local in-memory database fallback is not durable across process restarts.
-- The prototype is not a production-ready ITSM replacement.
 
 ## Future improvements
 
-- Add automated backend and frontend tests to CI.
-- Add role-based authentication and authorization.
-- Add retrieval-quality evaluation for both Chroma semantic results and lexical fallback results.
-- Add structured configuration validation and health checks for connected services.
-- Add deployment guides and verified screenshots of the application.
-
-## License
-
-No license is currently specified. Add a license file if you want to explicitly define how others may use, modify, and redistribute this project.
+- Add authentication and authorization, deployment health checks, and automated regression coverage for connected and fallback modes.
 
 ---
 
