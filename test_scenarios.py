@@ -11,10 +11,52 @@ if sys.stdout.encoding != 'utf-8':
 
 from fastapi.testclient import TestClient
 from app.main import app
+from app.database.mongodb import LocalDatabase
+from app.services.ai_service import _rule_based_classification
 
 client = TestClient(app)
 
+
+def test_local_database_cursor_and_upsert():
+    db = LocalDatabase()
+    collection = db["events"]
+    collection.insert_one({"event_id": "old", "created_at": "2026-01-01"})
+    collection.insert_one({"event_id": "new", "created_at": "2026-02-01"})
+
+    latest = list(collection.find({}, {"_id": 0}).sort("created_at", -1).limit(1))
+    assert len(latest) == 1
+    assert latest[0]["event_id"] == "new"
+
+    result = collection.update_one(
+        {"id": "KB-test"},
+        {"$set": {"title": "Test article"}},
+        upsert=True,
+    )
+    assert result["upserted_id"] is not None
+    assert collection.find_one({"id": "KB-test"})["title"] == "Test article"
+
+
+def test_rule_based_safety_and_intent_guards():
+    outage = _rule_based_classification(
+        "The production server is down and multiple employees cannot access the application"
+    )
+    assert outage["priority"] == "P1"
+    assert outage["should_escalate"] is True
+    assert outage["automation_possible"] is False
+    assert outage["automation_action"] is None
+    assert outage["assignment_group"] == "Infrastructure / L2 Support"
+
+    install = _rule_based_classification("Please install Microsoft Teams on my laptop")
+    assert install["subcategory"] == "Software Provisioning"
+    assert install["automation_action"] == "software_install"
+
+    app_problem = _rule_based_classification("Python keeps crashing when I open my project")
+    assert app_problem["subcategory"] != "Software Provisioning"
+    assert app_problem["automation_action"] != "software_install"
+
 def test_all_scenarios():
+    test_local_database_cursor_and_upsert()
+    test_rule_based_safety_and_intent_guards()
     print("=================================================================")
     print("RUNNING 5 MANDATORY HACKATHON LIVE DEMO SCENARIOS")
     print("=================================================================\n")
@@ -24,6 +66,9 @@ def test_all_scenarios():
     r1 = client.post("/api/demo/run/1")
     assert r1.status_code == 200, f"Scenario 1 failed: {r1.text}"
     d1 = r1.json()
+    assert d1["expected_ai_output"]["category_subcategory"] == "Network / VPN"
+    assert d1["expected_ai_output"]["priority"] == "P2"
+    assert d1["servicenow_incident"]["success"] is True
     print(f"Prompt: {d1['prompt']}")
     print(f"Expected AI Output:")
     for k, v in d1['expected_ai_output'].items():
@@ -36,6 +81,9 @@ def test_all_scenarios():
     r2 = client.post("/api/demo/run/2")
     assert r2.status_code == 200, f"Scenario 2 failed: {r2.text}"
     d2 = r2.json()
+    assert d2["ticket"]["status"] == "Resolved"
+    assert d2["ticket"].get("automation_status") == "Success"
+    assert d2["automation_result"]["success"] is True
     print(f"Prompt: {d2['prompt']}")
     print("Workflow executed:")
     for step in d2['workflow_executed']:
@@ -49,6 +97,9 @@ def test_all_scenarios():
     r3 = client.post("/api/demo/run/3")
     assert r3.status_code == 200, f"Scenario 3 failed: {r3.text}"
     d3 = r3.json()
+    assert d3["sources_attributed"], "RAG should return a relevant Outlook source"
+    assert d3["analysis"]["subcategory"] == "Email / Outlook"
+    assert d3["is_grounded"] if "is_grounded" in d3 else True
     print(f"Prompt: {d3['prompt']}")
     print("Retrieved Sources:")
     for s in d3['sources_attributed']:
@@ -61,6 +112,9 @@ def test_all_scenarios():
     r4 = client.post("/api/demo/run/4")
     assert r4.status_code == 200, f"Scenario 4 failed: {r4.text}"
     d4 = r4.json()
+    assert d4["ui_result"]["software"] == "Visual Studio Code"
+    assert d4["servicenow_details"]["success"] is True
+    assert d4["provisioning_workflow"], "Provisioning workflow steps should be returned"
     print(f"Prompt: {d4['prompt']}")
     print(f"UI Result:")
     for k, v in d4['ui_result'].items():
@@ -75,6 +129,10 @@ def test_all_scenarios():
     r5 = client.post("/api/demo/run/5")
     assert r5.status_code == 200, f"Scenario 5 failed: {r5.text}"
     d5 = r5.json()
+    assert d5["analysis"]["category"] == "Out of Scope"
+    assert d5["confidence_score"] < 0.65
+    assert d5["escalation_required"] is True
+    assert d5["is_grounded"] is False
     print(f"Prompt: {d5['prompt']}")
     print(f"Confidence Score: {d5['confidence_score']} (Below threshold)")
     print(f"Grounded in KB: {d5['is_grounded']}")
