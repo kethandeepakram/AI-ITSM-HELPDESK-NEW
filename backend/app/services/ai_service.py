@@ -222,7 +222,7 @@ def analyze_ticket(message: str) -> dict:
     if base.get("priority") == "P1" or base.get("should_escalate"):
         return base
 
-    if settings.LLM_PROVIDER in {"transformers", "huggingface_api"}:
+    if settings.HF_REFINE_TICKET_TEXT and settings.LLM_PROVIDER in {"transformers", "huggingface_api"}:
         messages = [
             {
                 "role": "system",
