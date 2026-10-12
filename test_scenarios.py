@@ -132,7 +132,7 @@ def test_chroma_vector_search_with_fake_store(monkeypatch):
 
 
 
-def test_huggingface_chat_completion_path(monkeypatch):
+def test_huggingface_hosted_chat_completion_path(monkeypatch):
     from types import SimpleNamespace
     import huggingface_hub
 
@@ -141,7 +141,7 @@ def test_huggingface_chat_completion_path(monkeypatch):
             assert api_key == "test-token"
 
         def chat_completion(self, messages, model, max_tokens, temperature):
-            assert model == "Qwen/Qwen2.5-3B-Instruct"
+            assert model == "Qwen/Qwen2.5-1.5B-Instruct"
             assert len(messages) == 2
             return SimpleNamespace(
                 choices=[
@@ -153,14 +153,12 @@ def test_huggingface_chat_completion_path(monkeypatch):
                 ]
             )
 
-    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "huggingface")
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "huggingface_api")
     monkeypatch.setattr(llm_service.settings, "HF_TOKEN", "test-token")
     monkeypatch.setattr(
-        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct"
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"
     )
-    monkeypatch.setattr(
-        huggingface_hub, "InferenceClient", FakeInferenceClient
-    )
+    monkeypatch.setattr(huggingface_hub, "InferenceClient", FakeInferenceClient)
 
     output = generate_ai_response(
         message="How do I troubleshoot Outlook synchronization?",
@@ -181,30 +179,23 @@ def test_huggingface_chat_completion_path(monkeypatch):
     )
 
     assert output["grounded"] is True
-    assert output["model_used"] == "Hugging Face (Qwen/Qwen2.5-3B-Instruct)"
+    assert output["model_used"] == "Hugging Face Inference Providers (Qwen/Qwen2.5-1.5B-Instruct)"
     assert "Check Outlook connection status" in output["text"]
     assert output["source_id"] == "KB1003"
 
 
-def test_ollama_chat_response_path(monkeypatch):
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "message": {
-                    "content": "Open Outlook, select Send/Receive, and check connectivity."
-                }
-            }
-
-    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "ollama")
-    monkeypatch.setattr(llm_service.settings, "OLLAMA_LLM_MODEL", "qwen2.5:3b")
+def test_local_transformers_chat_response_path(monkeypatch):
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
     monkeypatch.setattr(
-        llm_service.requests,
-        "post",
-        lambda *args, **kwargs: FakeResponse(),
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"
     )
+    monkeypatch.setattr(
+        llm_service,
+        "_generate_with_transformers",
+        lambda messages, max_new_tokens, temperature:
+            "Open Outlook, select Send/Receive, and check account connectivity.",
+    )
+
     output = generate_ai_response(
         message="How do I troubleshoot Outlook synchronization?",
         analysis={
@@ -222,18 +213,20 @@ def test_ollama_chat_response_path(monkeypatch):
             "score": 0.8,
         },
     )
+
     assert output["grounded"] is True
-    assert output["model_used"] == "Ollama local (qwen2.5:3b)"
+    assert output["model_used"] == "Hugging Face Transformers local (Qwen/Qwen2.5-1.5B-Instruct)"
     assert "Send/Receive" in output["text"]
     assert output["source_id"] == "KB1003"
 
 
-def test_ollama_unavailable_uses_grounded_fallback(monkeypatch):
-    def unavailable(*args, **kwargs):
-        raise llm_service.requests.ConnectionError("Ollama is not running")
-
-    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "ollama")
-    monkeypatch.setattr(llm_service.requests, "post", unavailable)
+def test_transformers_unavailable_uses_grounded_fallback(monkeypatch):
+    monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(
+        llm_service,
+        "_generate_with_transformers",
+        lambda messages, max_new_tokens, temperature: None,
+    )
     output = generate_ai_response(
         message="How do I troubleshoot Outlook synchronization?",
         analysis={
@@ -256,34 +249,24 @@ def test_ollama_unavailable_uses_grounded_fallback(monkeypatch):
     assert "Outlook Synchronization" in output["text"]
 
 
-def test_ollama_ticket_classification_refinement(monkeypatch):
+def test_transformers_ticket_classification_refinement(monkeypatch):
     from app.services import ai_service
 
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {
-                "response": (
-                    '{"summary":"Outlook login issue",'
-                    '"suggested_resolution":"Check the account and connectivity.",'
-                    '"confidence_score":0.91}'
-                )
-            }
-
-    monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "ollama")
+    monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "transformers")
     monkeypatch.setattr(
-        ai_service.requests,
-        "post",
-        lambda *args, **kwargs: FakeResponse(),
+        ai_service,
+        "generate_llm_text",
+        lambda messages, max_new_tokens, temperature:
+            '{"summary":"Outlook login issue",'
+            '"suggested_resolution":"Check the account and connectivity.",'
+            '"confidence_score":0.91}',
     )
     result = ai_service.analyze_ticket(
         "I need help because Outlook keeps failing to connect"
     )
     assert result["summary"] == "Outlook login issue"
     assert result["suggested_resolution"] == "Check the account and connectivity."
-    # The deterministic category and workflow fields must remain authoritative.
+    # Deterministic category and workflow fields remain authoritative.
     assert result["category"] == "Software"
     assert result["automation_action"] == "cache_clear"
 
