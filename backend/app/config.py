@@ -39,6 +39,16 @@ class Settings:
     HF_LLM_MODEL: str = os.getenv("HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
     HF_EMBEDDING_MODEL: str = os.getenv("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 
+    # Chroma persistent vector database (local prototype storage).
+    CHROMA_PERSIST_DIRECTORY: str = os.getenv(
+        "CHROMA_PERSIST_DIRECTORY",
+        str(backend_dir / "chroma_data"),
+    )
+    CHROMA_COLLECTION_NAME: str = os.getenv(
+        "CHROMA_COLLECTION_NAME",
+        "itsm_knowledge_chunks",
+    )
+
     # ServiceNow Configuration
     SERVICENOW_INSTANCE_URL: str | None = os.getenv("SERVICENOW_INSTANCE_URL")
     SERVICENOW_USERNAME: str | None = os.getenv("SERVICENOW_USERNAME")
