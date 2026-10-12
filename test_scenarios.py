@@ -127,6 +127,9 @@ def test_chroma_vector_search_with_fake_store(monkeypatch):
     assert results, "Chroma retrieval should return a relevant article"
     assert "Outlook" in results[0]["article"]["title"]
     assert results[0]["semantic_score"] > 0.9
+    # Semantic search selects a chunk, but the returned article retains full
+    # source line breaks for grounded answer and fallback presentation.
+    assert "\n2. In Outlook, navigate to Send / Receive tab" in results[0]["article"]["content"]
 
 
 
@@ -305,6 +308,9 @@ def test_malformed_generated_steps_fall_back_to_knowledge_article(monkeypatch):
     assert "Cached Exchange Mode" in output["text"]
     assert "Send/Receive All Folders" in output["text"]
     assert "\n3.\n" not in output["text"]
+    assert "**" not in output["text"]
+    assert "Suggested Next Step" not in output["text"]
+    assert "\n1. Check the Outlook status bar" in output["text"]
 
 
 def test_transformers_ticket_classification_refinement(monkeypatch):
