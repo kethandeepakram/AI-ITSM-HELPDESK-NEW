@@ -23,7 +23,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Hugging Face Inference API (optional), sentence-transformers (optional), rule-based classification, lexical-overlap retrieval fallback |
+| AI / NLP | Hugging Face Inference API (optional), sentence-transformers embeddings, rule-based classification, lexical-overlap fallback |\n| Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
 
@@ -171,7 +171,7 @@ Expected behavior depends on the configured rules and external integrations. Cri
 
 ## Known limitations
 
-- If sentence-transformers cannot load, knowledge retrieval uses lexical-overlap scoring when transformer embeddings cannot load.
+- RAG splits knowledge articles into overlapping word chunks, embeds chunks with the configured sentence-transformers model, and stores/retrieves vectors with ChromaDB. If the embedding model or Chroma is unavailable, retrieval falls back to lexical-overlap scoring. The fallback is not vector search.
 - ServiceNow and self-healing behaviors may use mock implementations depending on configuration.
 - The local in-memory database fallback is not durable across process restarts.
 - The prototype is not a production-ready ITSM replacement.
@@ -180,7 +180,7 @@ Expected behavior depends on the configured rules and external integrations. Cri
 
 - Add automated backend and frontend tests to CI.
 - Add role-based authentication and authorization.
-- Improve retrieval evaluation, source attribution, and embedding setup.
+- Add retrieval-quality evaluation for both Chroma semantic results and lexical fallback results.
 - Add structured configuration validation and health checks for connected services.
 - Add deployment guides and verified screenshots of the application.
 
