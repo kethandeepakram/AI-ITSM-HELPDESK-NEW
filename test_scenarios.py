@@ -141,7 +141,7 @@ def test_huggingface_hosted_chat_completion_path(monkeypatch):
             assert api_key == "test-token"
 
         def chat_completion(self, messages, model, max_tokens, temperature):
-            assert model == "Qwen/Qwen2.5-1.5B-Instruct"
+            assert model == "Qwen/Qwen2.5-0.5B-Instruct"
             assert len(messages) == 2
             return SimpleNamespace(
                 choices=[
@@ -156,7 +156,7 @@ def test_huggingface_hosted_chat_completion_path(monkeypatch):
     monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "huggingface_api")
     monkeypatch.setattr(llm_service.settings, "HF_TOKEN", "test-token")
     monkeypatch.setattr(
-        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"
     )
     monkeypatch.setattr(huggingface_hub, "InferenceClient", FakeInferenceClient)
 
@@ -179,7 +179,7 @@ def test_huggingface_hosted_chat_completion_path(monkeypatch):
     )
 
     assert output["grounded"] is True
-    assert output["model_used"] == "Hugging Face Inference Providers (Qwen/Qwen2.5-1.5B-Instruct)"
+    assert output["model_used"] == "Hugging Face Inference Providers (Qwen/Qwen2.5-0.5B-Instruct)"
     assert "Check Outlook connection status" in output["text"]
     assert output["source_id"] == "KB1003"
 
@@ -187,7 +187,7 @@ def test_huggingface_hosted_chat_completion_path(monkeypatch):
 def test_local_transformers_chat_response_path(monkeypatch):
     monkeypatch.setattr(llm_service.settings, "LLM_PROVIDER", "transformers")
     monkeypatch.setattr(
-        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-1.5B-Instruct"
+        llm_service.settings, "HF_LLM_MODEL", "Qwen/Qwen2.5-0.5B-Instruct"
     )
     monkeypatch.setattr(
         llm_service,
@@ -215,7 +215,7 @@ def test_local_transformers_chat_response_path(monkeypatch):
     )
 
     assert output["grounded"] is True
-    assert output["model_used"] == "Hugging Face Transformers local (Qwen/Qwen2.5-1.5B-Instruct)"
+    assert output["model_used"] == "Hugging Face Transformers local (Qwen/Qwen2.5-0.5B-Instruct)"
     assert "Send/Receive" in output["text"]
     assert output["source_id"] == "KB1003"
 
@@ -253,6 +253,7 @@ def test_transformers_ticket_classification_refinement(monkeypatch):
     from app.services import ai_service
 
     monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(ai_service.settings, "HF_REFINE_TICKET_TEXT", True)
     monkeypatch.setattr(
         ai_service,
         "generate_llm_text",
@@ -270,6 +271,24 @@ def test_transformers_ticket_classification_refinement(monkeypatch):
     assert result["category"] == "Software"
     assert result["automation_action"] == "cache_clear"
 
+
+
+def test_ticket_classification_skips_second_llm_call_by_default(monkeypatch):
+    from app.services import ai_service
+
+    monkeypatch.setattr(ai_service.settings, "LLM_PROVIDER", "transformers")
+    monkeypatch.setattr(ai_service.settings, "HF_REFINE_TICKET_TEXT", False)
+
+    def unexpected_llm_call(*args, **kwargs):
+        raise AssertionError("classification should not make a second local-model call")
+
+    monkeypatch.setattr(ai_service, "generate_llm_text", unexpected_llm_call)
+    result = ai_service.analyze_ticket(
+        "How do I troubleshoot Outlook synchronization?"
+    )
+    assert result["category"] == "Software"
+    assert result["subcategory"] == "Email / Outlook"
+    assert result["automation_action"] == "cache_clear"
 
 
 def test_chat_endpoint_returns_response_and_persists_history(monkeypatch):
