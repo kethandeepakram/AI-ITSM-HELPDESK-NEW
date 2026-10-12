@@ -184,6 +184,13 @@ def _clean_generated_response(response: str | None) -> str | None:
 
         lines.append(line)
 
+    # The last numbered step must end as a complete sentence. Small models often
+    # stop mid-step at the token cap; prefer the full approved article in that case.
+    nonempty_lines = [line for line in lines if line]
+    if nonempty_lines and re.match(r"^\d+[.)]\s+\S", nonempty_lines[-1]):
+        if not re.search(r"[.!?][\"'’”)}\]]*\s*$", nonempty_lines[-1]):
+            return None
+
     cleaned = "\n".join(lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned if len(cleaned) >= 20 else None
