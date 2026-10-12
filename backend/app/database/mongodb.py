@@ -209,3 +209,8 @@ def get_provisioning_collection():
 
 def get_servicenow_collection():
     return get_database()["servicenow_incidents"]
+
+
+def get_chat_history_collection():
+    """Return chat-history storage in MongoDB Atlas or the local demo store."""
+    return get_database()["chat_history"]
