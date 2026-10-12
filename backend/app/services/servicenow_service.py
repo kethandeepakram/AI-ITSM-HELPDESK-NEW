@@ -107,7 +107,7 @@ def create_servicenow_incident(ticket: dict) -> dict:
             assignment_group = ticket.get("assignment_group")
             description = ticket.get("message", "")
             if assignment_group:
-                description = f"{description}\\nRequested assignment group: {assignment_group}"
+                description = f"{description}\nRequested assignment group: {assignment_group}"
 
             payload = {
                 "short_description": ticket.get("summary") or ticket.get("message"),
