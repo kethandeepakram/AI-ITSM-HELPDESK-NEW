@@ -115,13 +115,25 @@ class LocalCollection:
     def count_documents(self, query: dict | None = None) -> int:
         return sum(1 for doc in self.store[self.name] if self._matches(doc, query))
 
-    def update_one(self, query: dict, update: dict):
+    def update_one(self, query: dict, update: dict, upsert: bool = False):
         for doc in self.store[self.name]:
             if self._matches(doc, query):
                 if "$set" in update:
                     doc.update(deepcopy(update["$set"]))
-                return {"matched_count": 1, "modified_count": 1}
-        return {"matched_count": 0, "modified_count": 0}
+                return {"matched_count": 1, "modified_count": 1, "upserted_id": None}
+
+        if upsert:
+            new_doc = {
+                key: deepcopy(value)
+                for key, value in (query or {}).items()
+                if not isinstance(value, dict)
+            }
+            if "$set" in update:
+                new_doc.update(deepcopy(update["$set"]))
+            result = self.insert_one(new_doc)
+            return {"matched_count": 0, "modified_count": 0, "upserted_id": result.inserted_id}
+
+        return {"matched_count": 0, "modified_count": 0, "upserted_id": None}
 
     def delete_many(self, query: dict | None = None):
         before = len(self.store[self.name])
