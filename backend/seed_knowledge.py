@@ -122,10 +122,8 @@ def seed_knowledge_base():
         collection.update_one(
             {"id": article["id"]},
             {"$set": article},
+            upsert=True,
         )
-    # If using local collection or empty
-    if collection.count_documents({}) == 0:
-        collection.insert_many(KNOWLEDGE_ARTICLES)
     print(f"Knowledge Base initialized with {len(KNOWLEDGE_ARTICLES)} articles.")
 
 if __name__ == "__main__":
