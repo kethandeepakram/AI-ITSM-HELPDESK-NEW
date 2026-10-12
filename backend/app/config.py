@@ -13,13 +13,12 @@ elif (root_dir / ".env").exists():
 else:
     load_dotenv()
 
+
 class Settings:
-    # Project Info
-    APP_NAME: str = "AI-Powered ITSM & Intelligent Helpdesk Platform"
+    APP_NAME: str = "AI-Powered ITSM & Intelligent Helpdesk Automation Platform"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
-    # Comma-separated allowed browser origins. Set these to frontend origin(s).
     CORS_ORIGINS: list[str] = [
         origin.strip().rstrip("/")
         for origin in os.getenv(
@@ -29,26 +28,26 @@ class Settings:
         if origin.strip()
     ]
 
-    # MongoDB Atlas
+    # MongoDB Atlas. If unavailable, the app falls back to temporary local storage.
     MONGODB_URI: str | None = os.getenv("MONGODB_URI")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "itsm_helpdesk")
 
-    # Optional hosted Hugging Face inference. Keep blank to avoid paid inference.
-    HF_TOKEN: str | None = os.getenv("HF_TOKEN")
-    HF_LLM_MODEL: str = os.getenv("HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
+    # Free/public Hugging Face model run locally using Transformers.
+    # Public models do not require an HF token; do not paste secrets into source control.
+    HF_TOKEN: str | None = os.getenv("HF_TOKEN") or None
+    HF_LLM_MODEL: str = os.getenv(
+        "HF_LLM_MODEL",
+        "Qwen/Qwen2.5-1.5B-Instruct",
+    )
     HF_EMBEDDING_MODEL: str = os.getenv(
         "HF_EMBEDDING_MODEL",
         "sentence-transformers/all-MiniLM-L6-v2",
     )
+    # transformers = local model; huggingface_api = hosted/credit-limited inference;
+    # fallback = grounded knowledge retrieval without generation (useful for CI).
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "transformers").strip().lower()
+    HF_MAX_NEW_TOKENS: int = int(os.getenv("HF_MAX_NEW_TOKENS", "220"))
 
-    # Option B: Ollama local inference (no hosted inference credits).
-    # Ollama must be installed and the configured model pulled locally.
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
-    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-    OLLAMA_LLM_MODEL: str = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
-    OLLAMA_TIMEOUT_SECONDS: float = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45"))
-
-    # Chroma persistent vector database (local prototype storage).
     CHROMA_PERSIST_DIRECTORY: str = os.getenv(
         "CHROMA_PERSIST_DIRECTORY",
         str(backend_dir / "chroma_data"),
@@ -58,13 +57,14 @@ class Settings:
         "itsm_knowledge_chunks",
     )
 
-    # ServiceNow Configuration
     SERVICENOW_INSTANCE_URL: str | None = os.getenv("SERVICENOW_INSTANCE_URL")
     SERVICENOW_USERNAME: str | None = os.getenv("SERVICENOW_USERNAME")
     SERVICENOW_PASSWORD: str | None = os.getenv("SERVICENOW_PASSWORD")
-    SERVICENOW_MOCK_MODE: bool = os.getenv("SERVICENOW_MOCK_MODE", "true").lower() in ("true", "1", "yes")
+    SERVICENOW_MOCK_MODE: bool = os.getenv(
+        "SERVICENOW_MOCK_MODE", "true"
+    ).lower() in ("true", "1", "yes")
 
-    # AI Safety & Governance
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.65"))
+
 
 settings = Settings()
