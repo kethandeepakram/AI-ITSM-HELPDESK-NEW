@@ -179,7 +179,7 @@ def _clean_generated_response(response: str | None) -> str | None:
         line = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", line)
 
         # A dangling list marker means the model probably hit its token limit.
-        if re.match(r"^\s*(?:\d+[.)]|[-*•])\s*$", line):
+        if re.match(r"^\s*(?:\d+[.)]?|[-*•])\s*$", line):
             return None
 
         lines.append(line)
