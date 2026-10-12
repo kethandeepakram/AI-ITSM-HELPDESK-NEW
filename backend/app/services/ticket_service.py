@@ -63,20 +63,30 @@ def create_ticket(message: str, auto_execute_self_heal: bool = True) -> dict:
                 software_name=analysis.get("software_name", "Visual Studio Code")
             )
             if automation_result.get("success"):
-                new_status = "Resolved"
+                is_live_servicenow = ticket.get("servicenow_mode") == "Live ServiceNow Instance"
+                is_simulated_action = automation_result.get("mode") == "SIMULATED"
+
+                # A simulated action must not close a real live incident. In that
+                # case keep the ticket open and make the simulated status explicit.
+                if is_live_servicenow and is_simulated_action:
+                    new_status = "Open"
+                    automation_status = "Simulated"
+                else:
+                    new_status = "Resolved"
+                    automation_status = "Success"
+
                 ticket["status"] = new_status
                 ticket["automation_result"] = automation_result
-                ticket["automation_status"] = "Success"
+                ticket["automation_status"] = automation_status
                 if automation_result.get("request_id"):
                     ticket["provisioning_request_id"] = automation_result["request_id"]
 
-                # Update MongoDB
                 collection.update_one(
                     {"ticket_id": ticket_id},
                     {
                         "$set": {
                             "status": new_status,
-                            "automation_status": "Success",
+                            "automation_status": automation_status,
                             "automation_result": automation_result,
                             "provisioning_request_id": automation_result.get("request_id"),
                             "updated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -84,13 +94,9 @@ def create_ticket(message: str, auto_execute_self_heal: bool = True) -> dict:
                     }
                 )
 
-                # The current automation service is a demo simulator. It may
-                # update the local mock incident for demonstration, but must not
-                # resolve a real ServiceNow incident without performing real remediation.
-                if (
-                    ticket.get("servicenow_incident")
-                    and ticket.get("servicenow_mode") != "Live ServiceNow Instance"
-                ):
+                # Mock incidents may be advanced to the demo's resolved state.
+                # Live incidents are only updated by real, non-simulated remediation.
+                if ticket.get("servicenow_incident") and not is_live_servicenow:
                     update_servicenow_incident(
                         ticket["servicenow_incident"],
                         {
