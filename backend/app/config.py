@@ -19,8 +19,7 @@ class Settings:
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
-    # Comma-separated allowed browser origins. Set this to the frontend origin
-    # for deployments; the default is for local Vite development only.
+    # Comma-separated allowed browser origins. Set these to frontend origin(s).
     CORS_ORIGINS: list[str] = [
         origin.strip().rstrip("/")
         for origin in os.getenv(
@@ -34,10 +33,20 @@ class Settings:
     MONGODB_URI: str | None = os.getenv("MONGODB_URI")
     MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "itsm_helpdesk")
 
-    # Hugging Face
+    # Optional hosted Hugging Face inference. Keep blank to avoid paid inference.
     HF_TOKEN: str | None = os.getenv("HF_TOKEN")
     HF_LLM_MODEL: str = os.getenv("HF_LLM_MODEL", "Qwen/Qwen2.5-3B-Instruct")
-    HF_EMBEDDING_MODEL: str = os.getenv("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    HF_EMBEDDING_MODEL: str = os.getenv(
+        "HF_EMBEDDING_MODEL",
+        "sentence-transformers/all-MiniLM-L6-v2",
+    )
+
+    # Option B: Ollama local inference (no hosted inference credits).
+    # Ollama must be installed and the configured model pulled locally.
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    OLLAMA_LLM_MODEL: str = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:3b")
+    OLLAMA_TIMEOUT_SECONDS: float = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "45"))
 
     # Chroma persistent vector database (local prototype storage).
     CHROMA_PERSIST_DIRECTORY: str = os.getenv(
