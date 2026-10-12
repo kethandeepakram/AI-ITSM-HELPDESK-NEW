@@ -35,6 +35,7 @@ def _live_table_request(
     payload: dict | None = None,
     query: str | None = None,
     sys_id: str | None = None,
+    limit: int = 1,
 ) -> dict:
     """Call the live ServiceNow Table API and return its result object."""
     base_url = settings.SERVICENOW_INSTANCE_URL.rstrip("/")
@@ -42,7 +43,7 @@ def _live_table_request(
     if sys_id:
         endpoint += f"/{quote(sys_id, safe='')}"
     if query:
-        endpoint += "?" + urlencode({"sysparm_query": query, "sysparm_limit": 1})
+        endpoint += "?" + urlencode({"sysparm_query": query, "sysparm_limit": max(1, min(int(limit), 1000))})
 
     data = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {
@@ -65,6 +66,7 @@ def list_servicenow_incidents() -> dict:
             result = _live_table_request(
                 "incident",
                 query="ORDERBYDESCsys_updated_on",
+                limit=100,
             )
             # Table API query returns a list when querying a table.
             incidents = result if isinstance(result, list) else ([result] if result else [])
