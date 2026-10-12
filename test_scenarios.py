@@ -15,6 +15,7 @@ from app.database.mongodb import LocalDatabase
 from app.services.ai_service import _rule_based_classification
 from app.services.llm_service import generate_ai_response
 from app.services import rag_service
+from app.services import automation_service
 from seed_knowledge import KNOWLEDGE_ARTICLES
 
 client = TestClient(app)
@@ -126,6 +127,43 @@ def test_chroma_vector_search_with_fake_store(monkeypatch):
     assert "Outlook" in results[0]["article"]["title"]
     assert results[0]["semantic_score"] > 0.9
 
+
+
+def test_simulated_software_provisioning_status_is_consistent(monkeypatch):
+    db = LocalDatabase()
+    provisioning = db["software_provisioning"]
+    audit_entries = []
+
+    monkeypatch.setattr(
+        automation_service,
+        "get_provisioning_collection",
+        lambda: provisioning,
+    )
+    monkeypatch.setattr(
+        automation_service,
+        "log_audit_trail",
+        lambda **entry: audit_entries.append(entry) or entry,
+    )
+
+    result = automation_service.execute_automation(
+        action="software_install",
+        ticket_id="TEST-PROVISIONING-STATUS",
+        software_name="Visual Studio Code",
+    )
+    record = provisioning.find_one(
+        {"ticket_id": "TEST-PROVISIONING-STATUS"}
+    )
+
+    assert result["success"] is True
+    assert result["mode"] == "SIMULATED"
+    assert result["status"] == "Completed (Simulated)"
+    assert "no endpoint software was installed" in result["message"].lower()
+    assert record["status"] == "Completed (Simulated)"
+    assert record["execution_mode"] == "SIMULATED"
+    assert record["software_installed"] is False
+    assert record["servicenow_status"] == "Mock request created; no software installed"
+    assert any(entry.get("status") == "Simulated" for entry in audit_entries)
+
 def test_rule_based_safety_and_intent_guards():
     outage = _rule_based_classification(
         "The production server is down and multiple employees cannot access the application"
@@ -221,6 +259,9 @@ def test_all_scenarios():
     assert r4.status_code == 200, f"Scenario 4 failed: {r4.text}"
     d4 = r4.json()
     assert d4["ui_result"]["software"] == "Visual Studio Code"
+    assert d4["ui_result"]["status"] == "Completed (Simulated)"
+    assert d4["status"] == "Completed (Simulated)"
+    assert d4["ui_result"]["servicenow"] == "Mock request created; no software installed"
     assert d4["servicenow_details"]["success"] is True
     assert d4["provisioning_workflow"], "Provisioning workflow steps should be returned"
     print(f"Prompt: {d4['prompt']}")
