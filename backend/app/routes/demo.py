@@ -143,13 +143,13 @@ def run_scenario(scenario_id: int):
             "ui_result": {
                 "request_id": auto_res.get("request_id", "REQ001245"),
                 "software": software_name,
-                "status": "Provisioning",
-                "servicenow": "Request created successfully"
+                "status": auto_res.get("status", "Completed (Simulated)"),
+                "servicenow": "Mock request created; no software installed"
             },
             "analysis": analysis,
             "provisioning_workflow": auto_res.get("workflow"),
             "servicenow_details": snow_res,
-            "status": "Provisioning Dispatched"
+            "status": auto_res.get("status", "Completed (Simulated)")
         }
 
     elif scenario_id == 5:
