@@ -101,6 +101,7 @@ def test_all_scenarios():
     assert d2["ticket"]["status"] == "Resolved"
     assert d2["ticket"].get("automation_status") == "Success"
     assert d2["automation_result"]["success"] is True
+    assert d2["automation_result"]["mode"] == "SIMULATED"
     print(f"Prompt: {d2['prompt']}")
     print("Workflow executed:")
     for step in d2['workflow_executed']:
