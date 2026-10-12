@@ -19,3 +19,7 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Persistent local Chroma vector index
+backend/chroma_data/
+chroma.sqlite3
