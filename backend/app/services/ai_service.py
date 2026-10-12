@@ -33,23 +33,43 @@ def _rule_based_classification(message: str) -> dict:
     confidence_score = 0.88
     should_escalate = False
 
-    if any(k in text for k in [
+    critical_outage_terms = [
         "production server is down", "production server down", "server outage",
         "production outage", "multiple employees cannot access",
         "multiple users cannot access", "application is down",
-        "production application unavailable"
-    ]):
+        "production application unavailable", "entire company network is down",
+        "company network is down", "entire network is down", "network-wide outage",
+        "network outage", "all employees cannot access",
+        "all employees are unable to access", "all users cannot access",
+        "all users are unable to access", "everyone cannot access",
+        "company-wide outage", "enterprise network is down", "widespread outage",
+        "entire company is down", "company systems are down",
+    ]
+    if any(k in text for k in critical_outage_terms):
         intent = "Incident"
-        category = "Server"
-        subcategory = "Production Outage"
+        is_network_outage = any(
+            term in text
+            for term in [
+                "network", "wifi", "wi-fi", "vpn", "connectivity",
+                "all employees cannot access", "all users cannot access",
+                "everyone cannot access", "company-wide outage", "widespread outage",
+            ]
+        )
+        category = "Network" if is_network_outage else "Server"
+        subcategory = "Enterprise Network Outage" if is_network_outage else "Production Outage"
         priority = "P1"
         impact = "Multiple Users"
         urgency = "High"
         assignment_group = "Infrastructure / L2 Support"
-        summary = "Critical production server outage"
+        summary = (
+            "Critical company-wide network outage"
+            if is_network_outage
+            else "Critical production service outage"
+        )
         suggested_resolution = (
-            "Critical production outage detected. Escalate immediately "
-            "to infrastructure support and investigate service availability."
+            "Critical widespread outage detected. Escalate immediately to "
+            "infrastructure/network support and follow the major-incident process. "
+            "Do not run routine self-healing while the outage scope is assessed."
         )
         automation_possible = False
         automation_action = None
