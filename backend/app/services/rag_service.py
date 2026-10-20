@@ -266,6 +266,14 @@ def _search_with_chroma(query: str, articles: list[dict], model, top_k: int) -> 
         distances = (response.get("distances") or [[]])[0]
         results = []
         seen_articles = set()
+        # Chroma stores flattened word chunks for semantic search. Reattach the
+        # original source article after ranking so answers and fallbacks retain
+        # full text and line breaks instead of showing one flattened chunk.
+        source_articles = {
+            str(source.get("id")): source
+            for source in articles
+            if source.get("id") is not None
+        }
 
         for document, metadata, distance in zip(documents, metadatas, distances):
             metadata = metadata or {}
@@ -276,6 +284,18 @@ def _search_with_chroma(query: str, articles: list[dict], model, top_k: int) -> 
             if article_id in seen_articles:
                 continue
             seen_articles.add(article_id)
+
+            source_article = source_articles.get(str(article_id))
+            if source_article:
+                article.update({
+                    "title": source_article.get("title", article.get("title")),
+                    "category": source_article.get("category", article.get("category")),
+                    "subcategory": source_article.get("subcategory", article.get("subcategory")),
+                    "content": source_article.get("content", article.get("content")),
+                    "source": source_article.get("source", article.get("source")),
+                    "keywords": source_article.get("keywords", article.get("keywords")),
+                    "version": source_article.get("version", article.get("version")),
+                })
 
             semantic_score = max(0.0, min(1.0, 1.0 - float(distance or 0.0)))
             lexical_score = compute_lexical_similarity(query, article)

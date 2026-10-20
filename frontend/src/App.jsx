@@ -2,7 +2,6 @@ import React, { useState } from "react";
 
 import Navbar from "./components/Navbar";
 import Chatbot from "./components/chatbot";
-import ScenarioRunner from "./components/ScenarioRunner";
 
 import Dashboard from "./pages/Dashboard.jsx";
 import SelfService from "./pages/SelfService.jsx";
@@ -68,11 +67,6 @@ function App() {
             minWidth: 0,
           }}
         >
-          {/* Top Live Scenario Launcher for Assessment */}
-          <ScenarioRunner onScenarioExecuted={() => {
-            // refresh active view if on dashboard
-          }} />
-
           {renderPage()}
         </main>
 
