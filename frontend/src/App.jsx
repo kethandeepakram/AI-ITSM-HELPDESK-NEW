@@ -72,7 +72,6 @@ function App() {
         </main>
 
         {/* AI chat is opened only when the floating button is clicked. */}
-      </div>
 
       {isChatOpen && (
         <div
