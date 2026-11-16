@@ -23,7 +23,7 @@ An AI-assisted IT service desk prototype built with **React, FastAPI, MongoDB, r
 | Frontend | React, Vite, JavaScript |
 | Backend | Python, FastAPI, Pydantic |
 | Data storage | MongoDB Atlas with local in-memory fallback |
-| AI / NLP | Hugging Face Inference API (optional), sentence-transformers embeddings, rule-based classification, lexical-overlap fallback |
+| AI / NLP | Hugging Face Qwen2.5-0.5B-Instruct run locally through Transformers, sentence-transformers embeddings, rule-based classification, lexical-overlap fallback; optional hosted Hugging Face API |
 | Vector database | ChromaDB persistent collection with lexical fallback when embeddings / Chroma are unavailable |
 | Integrations | ServiceNow REST integration or mock mode |
 | API documentation | FastAPI / Swagger UI |
@@ -53,7 +53,7 @@ sentence-transformers embeddings
                  |
   Retrieved chunks + source attribution
                  |
-      Grounded response / escalation
+ Hugging Face Transformers local generation or grounded fallback
                  |
       MongoDB Atlas / local fallback
 ```
@@ -91,7 +91,7 @@ The exact files may evolve as the project is developed.
 - Node.js 18 or later and npm
 - Git
 
-MongoDB Atlas and a Hugging Face token are optional for basic local exploration if the fallback modes remain enabled in your configuration.
+MongoDB Atlas and hosted Hugging Face inference are optional for local exploration. The default LLM path downloads the public Qwen2.5-0.5B-Instruct model from Hugging Face and runs it locally through Transformers, so it does not consume hosted inference credits. It uses less memory than larger models, though it still needs adequate RAM and disk space; the first model and embedding-model loads can take time. Ticket classification uses deterministic rules by default so a typical chat request doesn't need a second LLM generation call.
 
 ## Run locally
 
@@ -102,7 +102,13 @@ git clone https://github.com/kethandeepakram/AI-ITSM-HELPDESK-NEW.git
 cd AI-ITSM-HELPDESK-NEW
 ```
 
-### 2. Configure the backend
+### 2. Select the free Hugging Face model (local inference)
+
+The default is [Qwen/Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct), a public Apache-2.0 model. Transformers downloads the weights into the local Hugging Face cache at first use. This runs on your computer and does not call Hugging Face Inference Providers or spend hosted inference credits. An HF token is not needed for this public model.
+
+This model is much smaller than larger LLMs, but still needs several GB of disk and system memory, and CPU generation may be slow. If your computer cannot load it, the app keeps the grounded knowledge-base fallback.
+
+### 3. Configure the backend
 
 Create a local environment file by copying the template. On Windows PowerShell:
 
@@ -117,8 +123,11 @@ Open `backend/.env` and set the values needed by your configuration. For example
 ```dotenv
 MONGODB_URI=
 MONGODB_DATABASE=itsm_helpdesk
+LLM_PROVIDER=transformers
+HF_REFINE_TICKET_TEXT=false
 HF_TOKEN=
-HF_LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
+HF_LLM_MODEL=Qwen/Qwen2.5-0.5B-Instruct
+HF_MAX_NEW_TOKENS=96
 HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
 CHROMA_PERSIST_DIRECTORY=chroma_data
 CHROMA_COLLECTION_NAME=itsm_knowledge_chunks
@@ -142,7 +151,7 @@ Useful local endpoints:
 
 Keep this terminal running.
 
-### 3. Start the frontend
+### 4. Start the frontend
 
 Open a second terminal at the repository root:
 
@@ -156,12 +165,12 @@ Open the local URL printed by Vite (usually http://localhost:5173).
 
 Make sure the frontend API base URL in `frontend/src/services/api.js` matches the backend URL used locally or in your deployment.
 
-### 4. Run scenario tests
+### 5. Run scenario tests
 
 From the repository root, review the test script's prerequisites and then run:
 
 ```powershell
-python test_scenarios.py
+python -m pytest -q test_scenarios.py
 ```
 
 The test script may require the backend to be running. Review its output and the application's actual responses; this README does not claim tests have been run in every environment.
@@ -187,6 +196,7 @@ Expected behavior depends on the configured rules and external integrations. Cri
 ## Known limitations
 
 - RAG splits knowledge articles into overlapping word chunks, embeds chunks with the configured sentence-transformers model, and stores/retrieves vectors with ChromaDB. If the embedding model or Chroma is unavailable, retrieval falls back to lexical-overlap scoring. The fallback is not vector search.
+- Local Hugging Face Transformers inference runs on the machine hosting the backend. A deployed backend such as Render cannot use a model cached only on your own laptop; configure a suitable host/runtime or use the grounded fallback.
 - ServiceNow and self-healing behaviors may use mock implementations depending on configuration.
 - The local in-memory database fallback is not durable across process restarts.
 - The prototype is not a production-ready ITSM replacement.

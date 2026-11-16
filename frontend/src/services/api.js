@@ -13,7 +13,9 @@ const client = axios.create({
 export const api = {
   // AI Chat & Decisioning
   sendChatMessage: async (message) => {
-    const res = await client.post('/api/chat', { message });
+    // The first local Hugging Face request may download/load model weights.
+    // Give local inference up to five minutes before reporting a timeout.
+    const res = await client.post('/api/chat', { message }, { timeout: 300000 });
     return res.data;
   },
 
@@ -24,7 +26,8 @@ export const api = {
   },
 
   createTicket: async (message) => {
-    const res = await client.post('/api/tickets', { message });
+    // Ticket analysis may also load/use the same local Hugging Face model.
+    const res = await client.post('/api/tickets', { message }, { timeout: 300000 });
     return res.data;
   },
 

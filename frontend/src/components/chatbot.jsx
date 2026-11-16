@@ -9,7 +9,7 @@ const quickActions = [
   { label: "📶 Office Wi-Fi", value: "My laptop cannot connect to the corporate Wi-Fi." },
 ];
 
-export default function Chatbot() {
+export default function Chatbot({ onClose }) {
   const [messages, setMessages] = useState([
     {
       sender: "bot",
@@ -46,18 +46,18 @@ export default function Chatbot() {
     setLoading(true);
 
     try {
-      // 1. Send to AI Decision Engine
+      // 1. Answer the employee's question using AI + RAG.
+      // Creating a ticket is an explicit follow-up action, not automatic for every question.
       const chatData = await api.sendChatMessage(message);
-
-      // 2. Automatically create ticket & synchronize with ServiceNow
-      const ticketRes = await api.createTicket(message);
-      const ticket = ticketRes.ticket;
 
       const botMsg = {
         sender: "bot",
         text: chatData.ai_response,
         chatData: chatData,
-        ticket: ticket,
+        originalMessage: message,
+        ticket: null,
+        ticketCreating: false,
+        ticketError: null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
@@ -76,6 +76,35 @@ export default function Chatbot() {
     }
   };
 
+  const handleCreateTicket = async (messageIndex, originalMessage) => {
+    if (!originalMessage) return;
+
+    setMessages((prev) => prev.map((message, index) =>
+      index === messageIndex
+        ? { ...message, ticketCreating: true, ticketError: null }
+        : message
+    ));
+
+    try {
+      const ticketResponse = await api.createTicket(originalMessage);
+      setMessages((prev) => prev.map((message, index) =>
+        index === messageIndex
+          ? { ...message, ticket: ticketResponse.ticket, ticketCreating: false, ticketError: null }
+          : message
+      ));
+    } catch (err) {
+      setMessages((prev) => prev.map((message, index) =>
+        index === messageIndex
+          ? {
+              ...message,
+              ticketCreating: false,
+              ticketError: err.message || "Could not create the ticket. Please try again.",
+            }
+          : message
+      ));
+    }
+  };
+
   return (
     <div style={{
       background: "#ffffff",
@@ -84,8 +113,8 @@ export default function Chatbot() {
       boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.08)",
       display: "flex",
       flexDirection: "column",
-      height: "calc(100vh - 120px)",
-      maxHeight: "800px",
+      height: "100%",
+      maxHeight: "100%",
       overflow: "hidden",
     }}>
       {/* Header */}
@@ -110,9 +139,32 @@ export default function Chatbot() {
             <div style={{ fontSize: "11px", color: "#94a3b8" }}>RAG + Self-Healing Active</div>
           </div>
         </div>
-        <span style={{ fontSize: "11px", background: "#1e293b", color: "#38bdf8", padding: "3px 8px", borderRadius: "12px", fontWeight: "600" }}>
-          ServiceNow Integration
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "10px", background: "#1e293b", color: "#38bdf8", padding: "3px 7px", borderRadius: "12px", fontWeight: "600" }}>
+            ServiceNow
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close chat"
+              title="Close chat"
+              style={{
+                width: "28px",
+                height: "28px",
+                border: "none",
+                borderRadius: "8px",
+                background: "#1e293b",
+                color: "#ffffff",
+                fontSize: "20px",
+                lineHeight: 1,
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
@@ -151,6 +203,32 @@ export default function Chatbot() {
                 }}
               >
                 {m.text}
+
+                {isBot && m.chatData && !m.ticket && (
+                  <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    <button
+                      onClick={() => handleCreateTicket(idx, m.originalMessage)}
+                      disabled={m.ticketCreating}
+                      style={{
+                        padding: "7px 11px",
+                        borderRadius: "7px",
+                        border: "1px solid #2563eb",
+                        background: m.ticketCreating ? "#dbeafe" : "#eff6ff",
+                        color: "#1d4ed8",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        cursor: m.ticketCreating ? "wait" : "pointer",
+                      }}
+                    >
+                      {m.ticketCreating ? "Creating ticket..." : "🎫 Create Ticket / ServiceNow Incident"}
+                    </button>
+                    {m.ticketError && (
+                      <span role="alert" style={{ color: "#b91c1c", fontSize: "11px" }}>
+                        {m.ticketError}
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {/* Structured Ticket & Action Card */}
                 {isBot && m.ticket && (
@@ -201,7 +279,7 @@ export default function Chatbot() {
         {loading && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#64748b", fontSize: "12px" }}>
             <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#3b82f6" }} />
-            AI Agent is analyzing, searching knowledge & syncing ServiceNow...
+            AI Agent is analyzing the request and searching approved knowledge...
           </div>
         )}
         <div ref={messagesEndRef} />

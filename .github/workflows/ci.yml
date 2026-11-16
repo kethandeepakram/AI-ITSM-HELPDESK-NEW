@@ -12,6 +12,7 @@ jobs:
     env:
       MONGODB_URI: ""
       HF_TOKEN: ""
+      LLM_PROVIDER: "fallback"
       SERVICENOW_INSTANCE_URL: ""
       SERVICENOW_USERNAME: ""
       SERVICENOW_PASSWORD: ""

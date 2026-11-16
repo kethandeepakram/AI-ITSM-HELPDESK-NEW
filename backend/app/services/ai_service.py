@@ -3,6 +3,7 @@ import re
 import json
 import logging
 from app.config import settings
+from app.services.llm_service import generate_llm_text
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,6 @@ def _rule_based_classification(message: str) -> dict:
     """High-accuracy enterprise IT intent & entity extraction."""
     text = message.lower().strip()
 
-    # Default fallback
     intent = "Incident"
     category = "General IT"
     subcategory = "General Support"
@@ -33,38 +33,50 @@ def _rule_based_classification(message: str) -> dict:
     confidence_score = 0.88
     should_escalate = False
 
-    
-    # Critical production server outages
-    if any(k in text for k in [
-        "production server is down",
-        "production server down",
-        "server outage",
-        "production outage",
-        "multiple employees cannot access",
-        "multiple users cannot access",
-        "application is down",
-        "production application unavailable"
-    ]):
+    critical_outage_terms = [
+        "production server is down", "production server down", "server outage",
+        "production outage", "multiple employees cannot access",
+        "multiple users cannot access", "application is down",
+        "production application unavailable", "entire company network is down",
+        "company network is down", "entire network is down", "network-wide outage",
+        "network outage", "all employees cannot access",
+        "all employees are unable to access", "all users cannot access",
+        "all users are unable to access", "everyone cannot access",
+        "company-wide outage", "enterprise network is down", "widespread outage",
+        "entire company is down", "company systems are down",
+    ]
+    if any(k in text for k in critical_outage_terms):
         intent = "Incident"
-        category = "Server"
-        subcategory = "Production Outage"
+        is_network_outage = any(
+            term in text
+            for term in [
+                "network", "wifi", "wi-fi", "vpn", "connectivity",
+                "all employees cannot access", "all users cannot access",
+                "everyone cannot access", "company-wide outage", "widespread outage",
+            ]
+        )
+        category = "Network" if is_network_outage else "Server"
+        subcategory = "Enterprise Network Outage" if is_network_outage else "Production Outage"
         priority = "P1"
         impact = "Multiple Users"
         urgency = "High"
         assignment_group = "Infrastructure / L2 Support"
-        summary = "Critical production server outage"
+        summary = (
+            "Critical company-wide network outage"
+            if is_network_outage
+            else "Critical production service outage"
+        )
         suggested_resolution = (
-            "Critical production outage detected. Escalate immediately "
-            "to infrastructure support and investigate service availability."
+            "Critical widespread outage detected. Escalate immediately to "
+            "infrastructure/network support and follow the major-incident process. "
+            "Do not run routine self-healing while the outage scope is assessed."
         )
         automation_possible = False
         automation_action = None
         confidence_score = 0.99
         should_escalate = True
 
-    # Scenario 1 & Network / VPN Issues
     elif "vpn" in text:
-
         intent = "Incident"
         category = "Network"
         subcategory = "VPN"
@@ -78,8 +90,6 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "vpn_status_check"
         confidence_score = 0.96
 
-    
-    # Scenario 2 & Account / Password Reset / Unlock
     elif any(k in text for k in ["password", "forgot password", "reset password", "password expired"]):
         intent = "Automatable Issue"
         category = "Account & Access"
@@ -108,8 +118,6 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "account_unlock"
         confidence_score = 0.97
 
-    # Software provisioning is selected only when the message expresses a request.
-    # Merely mentioning Python, Teams, Docker, etc. must not trigger an installation.
     elif any(k in text for k in [
         "install", "installation", "installed", "installing", "provision",
         "provisioning", "software request", "request software", "need software",
@@ -122,9 +130,7 @@ def _rule_based_classification(message: str) -> dict:
         impact = "Individual"
         urgency = "Medium"
         assignment_group = "IT Service Desk"
-
-        # Detect specific software
-        detected_software = "Visual Studio Code" # default
+        detected_software = "Visual Studio Code"
         for sw in SOFTWARE_LIST:
             if sw in text:
                 if sw in ["visual studio code", "vs code"]:
@@ -138,7 +144,6 @@ def _rule_based_classification(message: str) -> dict:
                 else:
                     detected_software = sw.capitalize()
                 break
-
         software_name = detected_software
         summary = f"Software installation request: {software_name}"
         suggested_resolution = f"Validate {software_name} in enterprise catalogue and execute automated provisioning."
@@ -146,7 +151,6 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "software_install"
         confidence_score = 0.95
 
-    # Scenario 3 & Knowledge / Outlook
     elif any(k in text for k in ["outlook", "synchronization", "sync", "email", "mailbox"]):
         intent = "Knowledge Question"
         category = "Software"
@@ -161,7 +165,6 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "cache_clear"
         confidence_score = 0.93
 
-    # Wi-Fi Support
     elif any(k in text for k in ["wifi", "wi-fi", "wireless", "ssid", "internet disconnected"]):
         intent = "Incident"
         category = "Network"
@@ -176,7 +179,6 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "service_restart"
         confidence_score = 0.94
 
-    # Laptop Performance / Hardware
     elif any(k in text for k in ["slow", "laptop performance", "freeze", "cpu", "memory", "ram", "overheating"]):
         intent = "Incident"
         category = "Hardware"
@@ -191,7 +193,6 @@ def _rule_based_classification(message: str) -> dict:
         automation_action = "cache_clear"
         confidence_score = 0.91
 
-    # Scenario 5 & Out of Scope / Unsupported Question (AI Safety Guard)
     elif any(k in text for k in [
         "flight", "hotel", "weather", "recipe", "pizza", "movie", "paris", "joke", "sports",
         "stock", "invest", "crypto", "dating", "car", "salary", "bonus"
@@ -207,10 +208,9 @@ def _rule_based_classification(message: str) -> dict:
         suggested_resolution = "Approved IT Knowledge Base does not contain information for this non-IT topic. Human escalation recommended."
         automation_possible = False
         automation_action = None
-        confidence_score = 0.32  # Below threshold
+        confidence_score = 0.32
         should_escalate = True
 
-    # Low-confidence generic questions
     elif len(text.split()) < 3 and not any(k in text for k in ["vpn", "wifi", "help"]):
         confidence_score = 0.50
         should_escalate = True
@@ -235,70 +235,65 @@ def _rule_based_classification(message: str) -> dict:
     }
 
 def analyze_ticket(message: str) -> dict:
-    """Analyze a request while keeping deterministic safety rules authoritative."""
+    """Classify deterministically, then optionally refine safe text fields with the configured HF model."""
     base = _rule_based_classification(message)
 
-    # Never send critical incidents or mandatory escalations through an LLM
-    # merge path that could downgrade their priority or enable automation.
+    # P1 incidents and mandatory escalations never go through an LLM.
     if base.get("priority") == "P1" or base.get("should_escalate"):
         return base
 
-    # Try Hugging Face Inference if token is available. The LLM may refine
-    # wording/confidence, but it cannot choose automation actions or overwrite
-    # a deterministic category/priority/assignment decision.
-    if settings.HF_TOKEN:
-        try:
-            from huggingface_hub import InferenceClient
-            client = InferenceClient(api_key=settings.HF_TOKEN)
-            prompt = (
-                "You are an enterprise IT Helpdesk classifier. Analyze the following employee request and respond in valid JSON only with keys:\n"
-                "intent, category, subcategory, priority (P1, P2, P3, P4), impact, urgency, assignment_group, summary, suggested_resolution, automation_possible (boolean), confidence_score (float between 0 and 1).\n\n"
-                f"Employee Request: \"{message}\"\n\nJSON:"
-            )
-            resp = client.text_generation(
-                prompt=prompt,
-                model=settings.HF_LLM_MODEL,
-                max_new_tokens=250,
-                temperature=0.1
-            )
-            # Try parsing JSON
-            json_match = re.search(r"\{.*\}", resp, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group(0))
-                # Keep the deterministic rules authoritative whenever they
-                # recognized a specific workflow. For generic IT messages only,
-                # allow the model to suggest a classification; never accept model
-                # instructions to trigger automation.
-                allowed_fields = ["summary", "suggested_resolution", "confidence_score"]
-                if base.get("category") == "General IT":
-                    allowed_fields.extend([
-                        "intent", "category", "subcategory", "priority",
-                        "impact", "urgency", "assignment_group"
-                    ])
-                for key in allowed_fields:
-                    value = parsed.get(key)
-                    if value is not None:
-                        base[key] = value
-
-                base["suggested_action"] = base.get("suggested_resolution")
-                try:
-                    model_confidence = float(base.get("confidence_score", 0.9))
-                except (TypeError, ValueError):
-                    model_confidence = 0.9
-                model_confidence = min(max(model_confidence, 0.0), 1.0)
-                base["confidence_score"] = round(model_confidence, 2)
-                base["should_escalate"] = bool(
-                    base.get("should_escalate", False)
-                    or model_confidence < settings.CONFIDENCE_THRESHOLD
-                    or base.get("priority") == "P1"
-                    or base.get("category") == "Out of Scope"
+    if settings.HF_REFINE_TICKET_TEXT and settings.LLM_PROVIDER in {"transformers", "huggingface_api"}:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are an enterprise IT helpdesk classifier. Return valid JSON only "
+                    "with keys summary, suggested_resolution, confidence_score. Do not invent "
+                    "company policies and never choose or enable automation actions. Use the "
+                    "employee's description and keep the output concise."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Employee request: {message}\nReturn the JSON now.",
+            },
+        ]
+        raw = generate_llm_text(messages, max_new_tokens=180, temperature=0.1)
+        parsed = None
+        if raw:
+            try:
+                json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+                if json_match:
+                    parsed = json.loads(json_match.group(0))
+            except (json.JSONDecodeError, TypeError):
+                logger.info(
+                    "Hugging Face classification output was not valid JSON; keeping rule-based result."
                 )
-                if base["should_escalate"]:
-                    base["automation_possible"] = False
-                    base["automation_action"] = None
-                    base["software_name"] = None
-                return base
-        except Exception as e:
-            logger.info(f"Hugging Face Inference call skipped or fell back ({e})")
+
+        if parsed:
+            # Workflow fields stay deterministic; the model may refine summary,
+            # suggested resolution, and confidence only.
+            for key in ("summary", "suggested_resolution", "confidence_score"):
+                value = parsed.get(key)
+                if value is not None:
+                    base[key] = value
+
+            base["suggested_action"] = base.get("suggested_resolution")
+            try:
+                model_confidence = float(base.get("confidence_score", 0.9))
+            except (TypeError, ValueError):
+                model_confidence = 0.9
+            model_confidence = min(max(model_confidence, 0.0), 1.0)
+            base["confidence_score"] = round(model_confidence, 2)
+            base["should_escalate"] = bool(
+                base.get("should_escalate", False)
+                or model_confidence < settings.CONFIDENCE_THRESHOLD
+                or base.get("priority") == "P1"
+                or base.get("category") == "Out of Scope"
+            )
+            if base["should_escalate"]:
+                base["automation_possible"] = False
+                base["automation_action"] = None
+                base["software_name"] = None
 
     return base
