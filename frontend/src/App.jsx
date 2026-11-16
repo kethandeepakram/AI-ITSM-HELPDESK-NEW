@@ -12,6 +12,7 @@ import TicketDetails from "./pages/TicketDetails.jsx";
 function App() {
   const [page, setPage] = useState("dashboard");
   const [selectedTicket, setSelectedTicket] = useState(null);
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const renderPage = () => {
     switch (page) {
@@ -70,17 +71,51 @@ function App() {
           {renderPage()}
         </main>
 
-        <aside
+        {/* AI chat is opened only when the floating button is clicked. */}
+      </div>
+
+      {isChatOpen && (
+        <div
           style={{
-            width: "380px",
-            flex: "0 0 380px",
-            position: "sticky",
-            top: "84px",
-            alignSelf: "flex-start",
+            position: "fixed",
+            right: "24px",
+            bottom: "96px",
+            width: "min(390px, calc(100vw - 32px))",
+            height: "min(620px, calc(100vh - 120px))",
+            zIndex: 1000,
+            filter: "drop-shadow(0 12px 28px rgba(15, 23, 42, 0.22))",
           }}
         >
-          <Chatbot />
-        </aside>
+          <Chatbot onClose={() => setIsChatOpen(false)} />
+        </div>
+      )}
+
+      <button
+        type="button"
+        aria-label={isChatOpen ? "Close AI helpdesk chat" : "Open AI helpdesk chat"}
+        title={isChatOpen ? "Close AI chat" : "Chat with AI helpdesk"}
+        onClick={() => setIsChatOpen((open) => !open)}
+        style={{
+          position: "fixed",
+          right: "24px",
+          bottom: "24px",
+          width: "60px",
+          height: "60px",
+          borderRadius: "18px",
+          border: "none",
+          background: isChatOpen ? "#0f172a" : "#16a34a",
+          color: "#ffffff",
+          fontSize: "28px",
+          fontWeight: 700,
+          cursor: "pointer",
+          boxShadow: "0 8px 24px rgba(15, 23, 42, 0.28)",
+          zIndex: 1001,
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        {isChatOpen ? "×" : "✚"}
+      </button>
       </div>
     </div>
   );
