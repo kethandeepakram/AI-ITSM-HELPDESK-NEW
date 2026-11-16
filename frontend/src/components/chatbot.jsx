@@ -9,7 +9,7 @@ const quickActions = [
   { label: "📶 Office Wi-Fi", value: "My laptop cannot connect to the corporate Wi-Fi." },
 ];
 
-export default function Chatbot() {
+export default function Chatbot({ onClose }) {
   const [messages, setMessages] = useState([
     {
       sender: "bot",
@@ -113,8 +113,8 @@ export default function Chatbot() {
       boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.08)",
       display: "flex",
       flexDirection: "column",
-      height: "calc(100vh - 120px)",
-      maxHeight: "800px",
+      height: "100%",
+      maxHeight: "100%",
       overflow: "hidden",
     }}>
       {/* Header */}
@@ -139,9 +139,32 @@ export default function Chatbot() {
             <div style={{ fontSize: "11px", color: "#94a3b8" }}>RAG + Self-Healing Active</div>
           </div>
         </div>
-        <span style={{ fontSize: "11px", background: "#1e293b", color: "#38bdf8", padding: "3px 8px", borderRadius: "12px", fontWeight: "600" }}>
-          ServiceNow Integration
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "10px", background: "#1e293b", color: "#38bdf8", padding: "3px 7px", borderRadius: "12px", fontWeight: "600" }}>
+            ServiceNow
+          </span>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close chat"
+              title="Close chat"
+              style={{
+                width: "28px",
+                height: "28px",
+                border: "none",
+                borderRadius: "8px",
+                background: "#1e293b",
+                color: "#ffffff",
+                fontSize: "20px",
+                lineHeight: 1,
+                cursor: "pointer",
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages Scroll Area */}
